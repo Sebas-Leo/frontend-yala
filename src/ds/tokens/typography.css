@@ -1,0 +1,71 @@
+/* ============================================================
+   Yala — Typography tokens
+   Sans  : Hanken Grotesk  (UI + display)
+   Mono  : JetBrains Mono  (prices, countdown, bids, DNI/CCI,
+           tracking codes — anything transactional/numeric)
+   ============================================================ */
+
+:root {
+  /* ---- Families ---- */
+  --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system,
+               'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo,
+               Consolas, monospace;
+
+  /* ---- Weights ---- */
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+  --weight-extrabold:800;
+
+  /* ---- Type scale (desktop) ---- */
+  --text-display-lg: 56px;   /* hero numbers, marketing */
+  --text-display:    44px;
+  --text-h1:         34px;
+  --text-h2:         27px;
+  --text-h3:         22px;
+  --text-h4:         18px;
+  --text-base:       15px;   /* body default */
+  --text-sm:         13px;
+  --text-xs:         12px;
+  --text-2xs:        11px;   /* badges, overlines */
+
+  /* ---- Line heights ---- */
+  --leading-tight:   1.12;
+  --leading-snug:    1.28;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+
+  /* ---- Letter spacing ---- */
+  --tracking-tighter: -0.03em;
+  --tracking-tight:   -0.015em;
+  --tracking-normal:  0;
+  --tracking-wide:    0.02em;
+  --tracking-overline:0.08em;  /* uppercase labels */
+}
+
+/* ---- Reusable type roles ---- */
+.t-display-lg { font: var(--weight-extrabold) var(--text-display-lg)/var(--leading-tight) var(--font-sans); letter-spacing: var(--tracking-tighter); }
+.t-display    { font: var(--weight-extrabold) var(--text-display)/var(--leading-tight) var(--font-sans); letter-spacing: var(--tracking-tighter); }
+.t-h1         { font: var(--weight-bold) var(--text-h1)/var(--leading-tight) var(--font-sans); letter-spacing: var(--tracking-tight); }
+.t-h2         { font: var(--weight-bold) var(--text-h2)/var(--leading-snug) var(--font-sans); letter-spacing: var(--tracking-tight); }
+.t-h3         { font: var(--weight-semibold) var(--text-h3)/var(--leading-snug) var(--font-sans); letter-spacing: var(--tracking-tight); }
+.t-h4         { font: var(--weight-semibold) var(--text-h4)/var(--leading-snug) var(--font-sans); }
+.t-body       { font: var(--weight-regular) var(--text-base)/var(--leading-normal) var(--font-sans); }
+.t-body-strong{ font: var(--weight-semibold) var(--text-base)/var(--leading-normal) var(--font-sans); }
+.t-sm         { font: var(--weight-regular) var(--text-sm)/var(--leading-normal) var(--font-sans); }
+.t-xs         { font: var(--weight-medium) var(--text-xs)/var(--leading-normal) var(--font-sans); }
+.t-overline   { font: var(--weight-bold) var(--text-2xs)/1 var(--font-sans); letter-spacing: var(--tracking-overline); text-transform: uppercase; }
+
+/* Money / numeric — tabular figures for clean alignment */
+.t-price {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-tight);
+}
+.t-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,58 @@
+/* ============================================================
+   Yala — Motion tokens & base reset
+   Motion: quick, confident, no bounce. Fades + small lifts.
+   ============================================================ */
+
+:root {
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);    /* @kind other */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);   /* @kind other */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);   /* @kind other */
+
+  --dur-fast:   120ms;   /* @kind other */
+  --dur-base:   180ms;   /* @kind other */
+  --dur-slow:   280ms;   /* @kind other */
+
+  --transition-base: all var(--dur-base) var(--ease-out);
+}
+
+/* ---- Base element defaults (optional, scoped to .yala-base) ---- */
+.yala-base {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--text-body);
+  background: var(--surface-page);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.yala-base *, .yala-base *::before, .yala-base *::after { box-sizing: border-box; }
+
+.yala-base h1, .yala-base h2, .yala-base h3, .yala-base h4 {
+  color: var(--text-strong);
+  margin: 0;
+}
+.yala-base a { color: var(--text-link); text-decoration: none; }
+.yala-base a:hover { text-decoration: underline; }
+
+/* ---- Live pulse keyframe (live-auction dot) ---- */
+@keyframes yala-live-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(251, 101, 20, 0.55); }
+  70%  { box-shadow: 0 0 0 7px rgba(251, 101, 20, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(251, 101, 20, 0); }
+}
+
+/* ---- Skeleton shimmer ---- */
+@keyframes yala-shimmer {
+  0%   { background-position: -480px 0; }
+  100% { background-position: 480px 0; }
+}
+
+/* ---- Tick flash (price bumps up in real time) ---- */
+@keyframes yala-tick {
+  0%   { background-color: var(--live-100); }
+  100% { background-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yala-base * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

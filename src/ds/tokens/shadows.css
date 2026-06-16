@@ -1,0 +1,29 @@
+/* ============================================================
+   Yala — Shadows  (subtle — "sombras sutiles solo donde dan
+   jerarquía"). Cool, low-spread, layered.
+   ============================================================ */
+
+:root {
+  --shadow-xs:  0 1px 2px rgba(26, 26, 36, 0.06);
+  --shadow-sm:  0 1px 2px rgba(26, 26, 36, 0.06),
+                0 1px 3px rgba(26, 26, 36, 0.08);
+  --shadow-md:  0 2px 4px rgba(26, 26, 36, 0.06),
+                0 4px 12px rgba(26, 26, 36, 0.08);
+  --shadow-lg:  0 8px 16px rgba(26, 26, 36, 0.08),
+                0 12px 28px rgba(26, 26, 36, 0.10);
+  --shadow-xl:  0 16px 32px rgba(26, 26, 36, 0.12),
+                0 24px 48px rgba(26, 26, 36, 0.14);
+
+  /* Card hover lift */
+  --shadow-card:       var(--shadow-sm);
+  --shadow-card-hover: var(--shadow-lg);
+
+  /* Live auction glow — only for the live moment */
+  --shadow-live: 0 0 0 1px var(--live-border),
+                 0 8px 24px rgba(251, 101, 20, 0.22);
+
+  /* Focus rings (use as box-shadow) */
+  --ring-brand: 0 0 0 3px var(--focus-ring);
+  --ring-live:  0 0 0 3px var(--focus-ring-live);
+  --ring-error: 0 0 0 3px rgba(240, 68, 56, 0.30);
+}

@@ -1,0 +1,10 @@
+/* ============================================================
+   Yala — Webfonts
+   UI / display: Hanken Grotesk (premium, humanist grotesk)
+   Numeric / mono:  JetBrains Mono (prices, countdown, bids,
+                    DNI/CCI fields, tracking codes)
+   Loaded from Google Fonts. If self-hosting later, replace
+   these @import lines with local @font-face rules.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
