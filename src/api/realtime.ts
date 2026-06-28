@@ -123,3 +123,9 @@ export function subscribeLive<T = unknown>(streamId: number | string, cb: (paylo
 export function subscribeLiveChat<T = unknown>(streamId: number | string, cb: (payload: T | null) => void): () => void {
   return subscribe<T>(`/topic/live/${streamId}/chat`, cb);
 }
+
+// Identity verification channel: fires { verified: true, userId } when the backend
+// confirms a DNI check via Didit. AuthContext subscribes to update isIdentityVerified.
+export function subscribeIdentity<T = unknown>(userId: number | string, cb: (payload: T | null) => void): () => void {
+  return subscribe<T>(`/topic/identity/${userId}`, cb);
+}

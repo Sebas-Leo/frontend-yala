@@ -14,7 +14,7 @@ const shellCSS = `
 .ysh{position:sticky;top:0;z-index:50;font-family:var(--font-sans);}
 .ysh__bar{height:64px;background:var(--surface-card);border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:20px;padding:0 24px;}
 .ysh__logo{display:flex;align-items:center;gap:10px;cursor:pointer;flex:none;}
-.ysh__logo img{height:34px;display:block;}
+.ysh__logo img{height:40px;width:auto;display:block;object-fit:contain;}
 .ysh__search{flex:1;max-width:560px;display:flex;align-items:center;gap:10px;background:var(--surface-sunken);border:1px solid transparent;border-radius:var(--radius-pill);padding:0 16px;height:42px;color:var(--text-muted);transition:all var(--dur-fast) var(--ease-out);cursor:text;}
 .ysh__search:focus-within{background:var(--surface-card);border-color:var(--brand);box-shadow:var(--ring-brand);}
 .ysh__search input{flex:1;border:none;background:transparent;outline:none;font-family:inherit;font-size:14px;color:var(--text-strong);}
@@ -27,6 +27,8 @@ const shellCSS = `
 .ysh__sell:hover{background:var(--brand-hover);}
 .ysh__login{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 16px;border-radius:var(--radius-md);background:transparent;color:var(--text-strong);font-weight:600;font-size:14px;border:1px solid var(--border-subtle);cursor:pointer;transition:all var(--dur-fast);}
 .ysh__login:hover{background:var(--surface-sunken);}
+.ysh__register{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 18px;border-radius:var(--radius-md);background:#0E28D6;color:#fff;font-weight:700;font-size:14px;border:none;cursor:pointer;transition:background var(--dur-fast),transform var(--dur-fast);box-shadow:0 2px 10px rgba(14,40,214,.28);}
+.ysh__register:hover{background:#0a1fb0;transform:translateY(-1px);}
 .ysh__nav{height:48px;background:var(--surface-card);border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:4px;padding:0 24px;overflow-x:auto;}
 .ysh__cat{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:var(--radius-pill);font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;white-space:nowrap;transition:all var(--dur-fast);border:1px solid transparent;}
 .ysh__cat:hover{background:var(--surface-sunken);color:var(--text-strong);}
@@ -132,9 +134,14 @@ export default function AppShell({ onNav, onLogout, user = null }: AppShellProps
               </IconButton>
             </>
           ) : (
-            <button className="ysh__login" onClick={() => onNav && onNav('login')}>
-              <Icon.User size={17} /> Ingresar
-            </button>
+            <>
+              <button className="ysh__register" onClick={() => navigate('/login?tab=register')}>
+                <Icon.User size={17} /> Registrarse
+              </button>
+              <button className="ysh__login" onClick={() => onNav && onNav('login')}>
+                Ingresar
+              </button>
+            </>
           )}
         </div>
       </div>

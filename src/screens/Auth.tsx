@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Tabs, Input, Button, Icon } from '../ds';
 import { useAuth } from '../auth/AuthContext';
 
@@ -21,7 +22,9 @@ interface AuthProps { onAuth?: (profile: any) => void; }
 export default function Auth({ onAuth }: AuthProps) {
   ensure();
   const { login, register } = useAuth();
-  const [tab, setTab] = React.useState('login');
+  const [searchParams] = useSearchParams();
+  // Permite enlazar directo a la pestaña de registro vía /login?tab=register.
+  const [tab, setTab] = React.useState(searchParams.get('tab') === 'register' ? 'register' : 'login');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState(null);
 

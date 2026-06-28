@@ -5,6 +5,7 @@
 
 import React from 'react';
 import * as authApi from '../api/auth';
+import { subscribeIdentity } from '../api/realtime';
 
 const AuthContext = React.createContext<any>(null);
 
@@ -45,7 +46,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     authApi
       .getCurrentUser()
       .then((profile) => {
-        if (alive) setUser(profile);
+        if (alive) {
+          setUser(profile);
+          // Sync identity flag from backend (source of truth after first login).
+          if (profile?.isIdentityVerified) setIdentityVerified(true);
+        }
       })
       .catch(() => {
         // Token invalid/expired and refresh failed -> drop the session.
@@ -59,19 +64,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Subscribe to the per-user identity topic so the UI updates immediately
+  // when the backend confirms a DNI check, without requiring a page reload.
+  React.useEffect(() => {
+    if (!user) return undefined;
+    return subscribeIdentity(user.id, (msg: any) => {
+      if (msg?.verified) {
+        setIdentityVerified(true);
+        // Re-fetch profile so user.isIdentityVerified is in sync with the backend.
+        authApi.getCurrentUser().then((profile) => setUser(profile)).catch(() => {});
+      }
+    });
+  }, [user?.id, setIdentityVerified]);
+
   const login = React.useCallback(async (credentials: any) => {
     await authApi.login(credentials);
     const profile = await authApi.getCurrentUser();
     setUser(profile);
+    if (profile?.isIdentityVerified) setIdentityVerified(true);
     return profile;
-  }, []);
+  }, [setIdentityVerified]);
 
   const register = React.useCallback(async (payload: any) => {
     await authApi.register(payload);
     const profile = await authApi.getCurrentUser();
     setUser(profile);
+    if (profile?.isIdentityVerified) setIdentityVerified(true);
     return profile;
-  }, []);
+  }, [setIdentityVerified]);
 
   const logout = React.useCallback(() => {
     authApi.logout();
