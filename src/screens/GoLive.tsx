@@ -4,9 +4,9 @@ import { LiveKitRoom, VideoTrack, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { Button, Input, Price, Icon } from '../ds';
 import { useToast } from '../context/ToastContext';
-import { startLive, endLive, createFlashAuction, closeFlashAuction } from '../api/live';
-import { subscribeLive } from '../api/realtime';
-import type { FlashAuction, LiveToken, LiveUpdateMessage } from '../types';
+import { startLive, endLive, createFlashAuction, closeFlashAuction, listComments, postComment } from '../api/live';
+import { subscribeLive, subscribeLiveChat } from '../api/realtime';
+import type { FlashAuction, LiveComment, LiveToken, LiveUpdateMessage } from '../types';
 
 const css = `
 .ygl{max-width:1100px;margin:0 auto;padding:24px;}
@@ -20,6 +20,12 @@ const css = `
 .ygl__panel{display:flex;flex-direction:column;gap:14px;}
 .ygl__card{background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:16px;display:flex;flex-direction:column;gap:10px;}
 .ygl__label{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-subtle);}
+.ygl__chat{background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);display:flex;flex-direction:column;height:340px;}
+.ygl__chathd{padding:12px 14px;border-bottom:1px solid var(--border-subtle);font-weight:700;font-size:14px;color:var(--text-strong);}
+.ygl__msgs{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px;}
+.ygl__msg{font-size:13px;line-height:1.4;color:var(--text-body);}
+.ygl__msg b{color:var(--text-strong);font-weight:700;margin-right:5px;}
+.ygl__chatform{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border-subtle);}
 @media(max-width:900px){.ygl__grid{grid-template-columns:1fr;}}
 `;
 let ic = false;
@@ -51,6 +57,8 @@ export default function GoLive({ onBack }: Props) {
   const [faBase, setFaBase] = React.useState('');
   const [faIncrement, setFaIncrement] = React.useState('1');
   const [auction, setAuction] = React.useState<FlashAuction | null>(null);
+  const [messages, setMessages] = React.useState<LiveComment[]>([]);
+  const [chatText, setChatText] = React.useState('');
 
   React.useEffect(() => {
     if (!token) return;
@@ -60,6 +68,28 @@ export default function GoLive({ onBack }: Props) {
       if (msg.auction) setAuction(msg.auction);
     });
   }, [token]);
+
+  // Live chat: seed history (newest-first → show oldest-first) + realtime subscription.
+  React.useEffect(() => {
+    if (!token) return undefined;
+    listComments(token.streamId, { size: 30 })
+      .then((page: any) => setMessages([...(page?.content || [])].reverse()))
+      .catch(() => {});
+    return subscribeLiveChat<LiveComment>(token.streamId, (c) => {
+      if (c) setMessages((prev) => [...prev, c]);
+    });
+  }, [token]);
+
+  const sendComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    const text = chatText.trim();
+    if (!text) return;
+    setChatText('');
+    // The message is appended when the STOMP broadcast echoes back (no optimistic add).
+    try { await postComment(token.streamId, text); }
+    catch (err: any) { toast.error('No se pudo enviar', err?.message || 'Intenta de nuevo.'); }
+  };
 
   const start = async () => {
     if (!title.trim()) { toast.error('Falta el título', 'Ponle un título a tu transmisión.'); return; }
@@ -174,6 +204,21 @@ export default function GoLive({ onBack }: Props) {
                   )}
                 </>
               )}
+            </div>
+            <div className="ygl__chat">
+              <div className="ygl__chathd">Chat en vivo</div>
+              <div className="ygl__msgs">
+                {messages.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--text-subtle)' }}>Aún no hay comentarios.</div>
+                ) : messages.map((m) => (
+                  <div className="ygl__msg" key={m.id}><b>{m.userName}</b>{m.text}</div>
+                ))}
+              </div>
+              <form className="ygl__chatform" onSubmit={sendComment}>
+                <Input placeholder="Responde a tu audiencia…" value={chatText}
+                  onChange={(e: any) => setChatText(e.target.value)} style={{ flex: 1 }} />
+                <Button type="submit" variant="secondary" disabled={!chatText.trim()}>Enviar</Button>
+              </form>
             </div>
             <Button variant="ghost" onClick={end}
               iconLeft={Icon.X ? <Icon.X size={16} /> : null}>Terminar transmisión</Button>
