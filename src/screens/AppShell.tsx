@@ -118,7 +118,7 @@ export default function AppShell({ onNav, onLogout, user = null }: AppShellProps
         <div className="ysh__actions">
           {user ? (
             <>
-              <button className="ysh__sell" onClick={() => onNav && onNav('seller')}>
+              <button className="ysh__sell" onClick={() => navigate(user.verified ? '/seller' : '/seller/apply')}>
                 <Icon.Plus size={17} /> Vender
               </button>
               <IconButton label="Notificaciones" variant="ghost" badge={unread || undefined} onClick={() => onNav && onNav('notifications')}>

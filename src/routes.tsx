@@ -17,6 +17,7 @@ const Checkout = React.lazy(() => import('./screens/Checkout'));
 const MyOrders = React.lazy(() => import('./screens/MyOrders'));
 const Notifications = React.lazy(() => import('./screens/Notifications'));
 const SellerDashboard = React.lazy(() => import('./screens/SellerDashboard'));
+const SellerApply = React.lazy(() => import('./screens/SellerApply'));
 const CreateListing = React.lazy(() => import('./screens/CreateListing'));
 const CreateAuction = React.lazy(() => import('./screens/CreateAuction'));
 const Review = React.lazy(() => import('./screens/Review'));
@@ -125,6 +126,16 @@ export function buildRoutes(ctx: any): RouteDef[] {
       protect: true,
       roles: SELLER,
       element: <GoLive onBack={() => navigate('/seller')} />,
+    },
+    {
+      path: '/seller/apply',
+      protect: true,
+      element: (
+        <SellerApply
+          onBack={() => navigate('/')}
+          onAlreadySeller={() => navigate('/seller')}
+        />
+      ),
     },
     {
       path: '/seller/new-listing',

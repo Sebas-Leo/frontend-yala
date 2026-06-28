@@ -28,12 +28,14 @@ export default function Auth({ onAuth }: AuthProps) {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState(null);
 
-  // Only the fields the backend contract accepts (RequestRegisterDTO/RequestLoginDTO):
-  // name, email, password, role. The extra design fields (birth date, address, CCI,
-  // phone) stay as UI for now — there is no endpoint to persist them yet.
+  // Buyer registration: DNI + names are validated against RENIEC (JSON.pe) in the backend.
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
-  const [name, setName] = React.useState('');
+  const [dni, setDni] = React.useState('');
+  const [nombres, setNombres] = React.useState('');
+  const [apellidoPaterno, setApellidoPaterno] = React.useState('');
+  const [apellidoMaterno, setApellidoMaterno] = React.useState('');
+  const dniValid = /^\d{8}$/.test(dni);
 
   const switchTab = (v) => { setTab(v); setError(null); };
 
@@ -53,8 +55,7 @@ export default function Auth({ onAuth }: AuthProps) {
   };
 
   const doLogin = run(() => login({ email, password }));
-  const doRegister = run(() => register({ name, email, password, role: 'USER' }));
-  const doStore = run(() => register({ name, email, password, role: 'SELLER' }));
+  const doRegister = run(() => register({ dni, email, password, nombres, apellidoPaterno, apellidoMaterno }));
 
   const errorBanner = error ? (
     <div className="au__err">
@@ -73,7 +74,6 @@ export default function Auth({ onAuth }: AuthProps) {
         <Tabs value={tab} onChange={switchTab} tabs={[
           { value: 'login', label: 'Ingresar' },
           { value: 'register', label: 'Crear cuenta' },
-          { value: 'store', label: 'Tienda' },
         ]} />
 
         {tab === 'login' && (
@@ -93,37 +93,24 @@ export default function Auth({ onAuth }: AuthProps) {
         {tab === 'register' && (
           <form className="au__form" onSubmit={doRegister}>
             {errorBanner}
-            <Input label="Nombre completo" placeholder="Diego Ramírez" required
-              value={name} onChange={(e) => setName(e.target.value)} />
+            <Input label="DNI" mono inputMode="numeric" maxLength={8} placeholder="12345678" required
+              value={dni} onChange={(e) => setDni(e.target.value.replace(/\D/g, '').slice(0, 8))}
+              error={dni && !dniValid ? 'El DNI debe tener 8 dígitos.' : undefined} />
+            <Input label="Nombres" placeholder="Ana María" required
+              value={nombres} onChange={(e) => setNombres(e.target.value)} />
+            <div className="au__row">
+              <Input label="Apellido paterno" placeholder="Torres" required style={{ flex: 1, minWidth: 0 }}
+                value={apellidoPaterno} onChange={(e) => setApellidoPaterno(e.target.value)} />
+              <Input label="Apellido materno" placeholder="Quispe" required style={{ flex: 1, minWidth: 0 }}
+                value={apellidoMaterno} onChange={(e) => setApellidoMaterno(e.target.value)} />
+            </div>
             <Input label="Email" type="email" placeholder="tu@email.com" required
               value={email} onChange={(e) => setEmail(e.target.value)} />
             <Input label="Contraseña" type="password" hint="Mín. 8 caracteres." required
               value={password} onChange={(e) => setPassword(e.target.value)} />
-            <Input label="Fecha de nacimiento" type="date" required />
-            <div className="au__note"><Icon.Shield size={14} style={{ flex: 'none', marginTop: 1 }} /> Tienes que ser mayor de 18. El DNI se pide una sola vez, solo al pujar o comprar.</div>
-            <Button variant="primary" size="lg" fullWidth type="submit" disabled={busy}>
+            <div className="au__note"><Icon.Shield size={14} style={{ flex: 'none', marginTop: 1 }} /> Validamos tu DNI contra RENIEC. Tus nombres y apellidos deben coincidir con tu documento.</div>
+            <Button variant="primary" size="lg" fullWidth type="submit" disabled={busy || !dniValid}>
               {busy ? 'Creando…' : 'Crear cuenta'}
-            </Button>
-          </form>
-        )}
-
-        {tab === 'store' && (
-          <form className="au__form" onSubmit={doStore}>
-            {errorBanner}
-            <Input label="Nombre de la tienda" placeholder="CardVault PE" required
-              value={name} onChange={(e) => setName(e.target.value)} />
-            <Input label="Email" type="email" placeholder="tienda@email.com" required
-              value={email} onChange={(e) => setEmail(e.target.value)} />
-            <Input label="Contraseña" type="password" required
-              value={password} onChange={(e) => setPassword(e.target.value)} />
-            <Input label="Dirección" placeholder="Av. Ejemplo 123, Lima" required />
-            <div className="au__row">
-              <Input label="CCI" mono placeholder="00219..." required style={{ flex: 1, minWidth: 0 }} />
-              <Input label="Teléfono" mono placeholder="+51 9..." style={{ flex: 1, minWidth: 0 }} />
-            </div>
-            <div className="au__note"><Icon.Wallet size={14} style={{ flex: 'none', marginTop: 1 }} /> El CCI se usa para transferirte el neto (92%) después de cada venta. Tu tienda queda pendiente de aprobación de un admin.</div>
-            <Button variant="primary" size="lg" fullWidth type="submit" disabled={busy}>
-              {busy ? 'Registrando…' : 'Registrar tienda'}
             </Button>
           </form>
         )}

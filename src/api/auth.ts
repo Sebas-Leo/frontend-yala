@@ -4,8 +4,8 @@
 //   POST /auth/refresh-token  (handled in client.js interceptor)
 //   GET  /users/me            -> ResponseUserDTO (full session profile)
 //
-// Note: there is NO /register-store endpoint. A store/seller signs up through
-// the same /register passing role: 'SELLER'.
+// Buyer registration validates the DNI against RENIEC (JSON.pe) in the backend.
+// Sellers are not created here: a registered user applies via /seller/application.
 
 import { api } from './client';
 import { setTokens, clearTokens, getAccessToken } from './tokens';
@@ -21,8 +21,11 @@ export async function login({ email, password }: { email: string; password: stri
   return fromAuthDto(dto);
 }
 
-export async function register({ name, email, password, role = 'USER' }: { name: string; email: string; password: string; role?: string }) {
-  const dto = await api.post('/auth/register', { name, email, password, role }, { auth: false });
+export async function register(payload: {
+  dni: string; email: string; password: string;
+  nombres: string; apellidoPaterno: string; apellidoMaterno: string;
+}) {
+  const dto = await api.post('/auth/register', payload, { auth: false });
   setTokens(dto);
   return fromAuthDto(dto);
 }
