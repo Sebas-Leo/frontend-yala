@@ -19,6 +19,8 @@ const css = `
 .ca__durs{display:flex;gap:10px;flex-wrap:wrap;}
 .ca__err{font-size:12px;color:var(--danger);margin-top:6px;}
 .ca__hint{font-size:12px;color:var(--text-subtle);display:flex;gap:6px;align-items:flex-start;line-height:1.5;}
+.ca__dt{display:flex;gap:12px;}
+.ca__dt>*{flex:1;min-width:0;}
 `;
 let ic = false; function ensure(){ if(!ic){ic=true;const s=document.createElement('style');s.textContent=css;document.head.appendChild(s);} }
 
@@ -51,7 +53,7 @@ export default function CreateAuction({ onBack }: CreateAuctionProps) {
   );
 
   const form = useForm({
-    initial: { listingId: preselected ? String(preselected) : '', startingPrice: '', endsAt: '' },
+    initial: { listingId: preselected ? String(preselected) : '', startingPrice: '', endDate: '', endTime: '' },
     validate,
   });
   const [duration, setDuration] = React.useState(3);
@@ -59,7 +61,8 @@ export default function CreateAuction({ onBack }: CreateAuctionProps) {
   const submit = () =>
     form.handleSubmit(async (v) => {
       try {
-        const endsAt = v.endsAt ? v.endsAt.length === 16 ? `${v.endsAt}:00` : v.endsAt : isoFromDays(duration);
+        // Fecha + hora locales (sin Z) -> LocalDateTime del backend. Si no hay fecha, usa la duración elegida.
+        const endsAt = v.endDate ? `${v.endDate}T${v.endTime || '23:59'}:00` : isoFromDays(duration);
         await createAuction({
           listingId: Number(v.listingId),
           startingPrice: Number(v.startingPrice),
@@ -100,12 +103,18 @@ export default function CreateAuction({ onBack }: CreateAuctionProps) {
           <div>
             <div className="ca__lbl">Duración</div>
             <div className="ca__durs">
-              {DURATIONS.map((d) => <Tag key={d} selected={duration === d} onClick={() => { setDuration(d); form.setValue('endsAt', ''); }}>{d} {d === 1 ? 'día' : 'días'}</Tag>)}
+              {DURATIONS.map((d) => <Tag key={d} selected={duration === d} onClick={() => { setDuration(d); form.setValue('endDate', ''); form.setValue('endTime', ''); }}>{d} {d === 1 ? 'día' : 'días'}</Tag>)}
             </div>
           </div>
 
-          <Input label="Fin exacto (opcional)" type="datetime-local" hint="Si lo dejas vacío, cierra en la duración elegida."
-            value={form.values.endsAt} onChange={form.handleChange('endsAt')} />
+          <div>
+            <div className="ca__lbl">Fin exacto (opcional)</div>
+            <div className="ca__dt">
+              <Input label="Fecha" type="date" value={form.values.endDate} onChange={form.handleChange('endDate')} />
+              <Input label="Hora" type="time" value={form.values.endTime} onChange={form.handleChange('endTime')} />
+            </div>
+            <div className="ca__hint" style={{ marginTop: 8 }}><Icon.Clock size={13} style={{ flex: 'none', marginTop: 1 }} /> Si lo dejas vacío, cierra según la duración elegida (la hora por defecto es 23:59).</div>
+          </div>
 
           <div className="ca__hint"><Icon.Clock size={14} style={{ flex: 'none', marginTop: 1 }} /> Al cerrar con pujas se crea una orden para el ganador con 48h para pagar.</div>
 

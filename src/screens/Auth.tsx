@@ -85,6 +85,7 @@ export default function Auth({ onAuth }: AuthProps) {
             <Button variant="primary" size="lg" fullWidth type="submit" disabled={busy}>
               {busy ? 'Ingresando…' : 'Ingresar'}
             </Button>
+            <div className="au__foot"><span className="au__link" onClick={() => navigate('/forgot-password')}>¿Olvidaste tu contraseña?</span></div>
             <div className="au__foot">¿No tienes cuenta? <span className="au__link" onClick={() => navigate('/register')}>Crea una</span></div>
           </form>
         )}

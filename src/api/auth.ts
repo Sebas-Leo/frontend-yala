@@ -46,6 +46,15 @@ export function getCurrentUser() {
   return api.get('/users/me');
 }
 
+// Password recovery: request a code, then reset with the code. Both are public (no token).
+export function forgotPassword(email: string) {
+  return api.post('/auth/forgot-password', { email }, { auth: false });
+}
+
+export function resetPassword({ email, code, newPassword }: { email: string; code: string; newPassword: string }) {
+  return api.post('/auth/reset-password', { email, code, newPassword }, { auth: false });
+}
+
 export function logout() {
   clearTokens();
 }

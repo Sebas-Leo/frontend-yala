@@ -13,6 +13,7 @@ const GoLive = React.lazy(() => import('./screens/GoLive'));
 const ListingDetail = React.lazy(() => import('./screens/ListingDetail'));
 const SellerProfile = React.lazy(() => import('./screens/SellerProfile'));
 const Auth = React.lazy(() => import('./screens/Auth'));
+const ForgotPassword = React.lazy(() => import('./screens/ForgotPassword'));
 const Checkout = React.lazy(() => import('./screens/Checkout'));
 const MyOrders = React.lazy(() => import('./screens/MyOrders'));
 const Notifications = React.lazy(() => import('./screens/Notifications'));
@@ -102,6 +103,7 @@ export function buildRoutes(ctx: any): RouteDef[] {
     },
     { path: '/login', element: <Auth onAuth={handleAuth} /> },
     { path: '/register', element: <Auth onAuth={handleAuth} /> },
+    { path: '/forgot-password', element: <ForgotPassword /> },
 
     { path: '/checkout', protect: true, element: <Checkout onBack={() => navigate('/orders')} /> },
     {
