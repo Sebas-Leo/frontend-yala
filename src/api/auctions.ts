@@ -20,3 +20,9 @@ export function getAuction(id: number | string, { signal }: ReqOpts = {}) {
 export function createAuction(body: any) {
   return api.post('/auctions', body);
 }
+
+// Edit an auction's starting price and end date (owner only, no bids yet).
+// body: { startingPrice, endsAt (ISO-8601) }
+export function updateAuction(id: number | string, body: any) {
+  return api.put(`/auctions/${id}`, body);
+}

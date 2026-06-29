@@ -1,11 +1,12 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Price, Countdown, Avatar, ReputationStars, Button, Input, StatusBadge,
+  Price, Countdown, Avatar, ReputationStars, Button, Input, Textarea, Select, StatusBadge,
   Dialog, DniGate, EmptyState, Skeleton, Icon,
 } from '../ds';
-import { getListing } from '../api/listings';
-import { getAuction } from '../api/auctions';
+import { getListing, updateListing, cancelListing } from '../api/listings';
+import { getAuction, updateAuction } from '../api/auctions';
+import { listCategories } from '../api/categories';
 import { listBids, placeBid as placeBidApi } from '../api/bids';
 import { subscribeAuction } from '../api/realtime';
 import { listingFromDto, bidFromDto } from '../api/adapters';
@@ -29,10 +30,11 @@ const css = `
 .yal__info{min-width:0;}
 .yal__cat{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--brand);margin-bottom:8px;}
 .yal__title{font-size:28px;font-weight:800;color:var(--text-strong);line-height:1.18;letter-spacing:-.02em;margin-bottom:14px;text-wrap:balance;}
-.yal__livebox{background:linear-gradient(165deg,var(--live-50),var(--surface-card));border:1px solid var(--live-border);border-radius:var(--radius-xl);padding:20px;box-shadow:var(--shadow-live);margin-bottom:18px;}
+.yal__livebox{background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-xl);padding:20px;box-shadow:var(--shadow-sm);margin-bottom:18px;}
+.yal__owneractions{display:flex;gap:10px;margin:-4px 0 16px;}
 .yal__lr{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap;}
 .yal__lbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--live-hover);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
-.yal__livedot{width:8px;height:8px;border-radius:50%;background:var(--live);animation:yala-live-pulse 1.4s infinite;}
+.yal__livedot{width:8px;height:8px;border-radius:50%;background:var(--brand);}
 .yal__cdwrap{text-align:right;min-width:0;}
 .yal__cdwrap .yds-cd__b{min-width:42px;}
 .yal__bidsno{font-family:var(--font-mono);font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:5px;margin-top:10px;}
@@ -65,6 +67,8 @@ let ic = false; function ensure(){ if(!ic){ic=true;const s=document.createElemen
 function increment(current) {
   return Math.max(1, Math.round((Number(current) || 0) * 0.01));
 }
+
+const CONDITIONS = ['PSA 10 (Gem Mint)', 'PSA 9 (Mint)', 'PSA 8 (Near Mint)', 'PSA 7 o menor', 'Sin gradar (Excelente/Bueno)'];
 
 interface AuctionLiveProps { verified?: any; onRequireDni?: () => void; onBack?: () => void }
 
@@ -120,6 +124,13 @@ export default function AuctionLive({ verified = false, onRequireDni, onBack }: 
   const [showConfirm, setShowConfirm] = React.useState(false);
   const [showGate, setShowGate] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+
+  // Owner management (edit / delete the static auction).
+  const catsQ = useFetch((signal) => listCategories({ signal }), []);
+  const [showEdit, setShowEdit] = React.useState(false);
+  const [showDelete, setShowDelete] = React.useState(false);
+  const [savingOwner, setSavingOwner] = React.useState(false);
+  const [form, setForm] = React.useState<any>({ title: '', description: '', condition: '', categoryId: '', startingPrice: '', endsAt: '' });
 
   // Keep the suggested bid in sync as the current price climbs.
   const prevCurrent = React.useRef(current);
@@ -216,6 +227,57 @@ export default function AuctionLive({ verified = false, onRequireDni, onBack }: 
     }
   };
 
+  const openEdit = () => {
+    setForm({
+      title: listing.title || '',
+      description: listing.description || '',
+      condition: listing.condition || '',
+      categoryId: String(listingQ.data?.category?.id ?? ''),
+      startingPrice: String(auction?.startingPrice ?? current ?? ''),
+      endsAt: (listing.auction?.endsAt || '').slice(0, 16),
+    });
+    setShowEdit(true);
+  };
+
+  const saveEdit = async () => {
+    setSavingOwner(true);
+    try {
+      await updateListing(listing.id, {
+        title: form.title.trim(),
+        description: form.description.trim(),
+        mode: 'AUCTION',
+        condition: form.condition,
+        categoryId: Number(form.categoryId),
+      });
+      // Price/date are only editable while the auction has no bids.
+      if (totalBids === 0 && listing.auction?.id) {
+        const endsAt = form.endsAt && form.endsAt.length === 16 ? `${form.endsAt}:00` : form.endsAt;
+        await updateAuction(listing.auction.id, { startingPrice: Number(form.startingPrice), endsAt });
+      }
+      toast.success('Subasta actualizada', 'Los cambios se guardaron.', 'Check');
+      setShowEdit(false);
+      listingQ.refetch();
+      auctionQ.refetch();
+    } catch (err) {
+      toast.error('No se pudo actualizar', err.message || 'Revisa los datos e intenta de nuevo.');
+    } finally {
+      setSavingOwner(false);
+    }
+  };
+
+  const doDelete = async () => {
+    setSavingOwner(true);
+    try {
+      await cancelListing(listing.id);
+      toast.success('Publicación eliminada', 'Tu subasta fue retirada.');
+      navigate('/seller');
+    } catch (err) {
+      toast.error('No se pudo eliminar', err.message || 'Intenta nuevamente.');
+    } finally {
+      setSavingOwner(false);
+    }
+  };
+
   // --- Loading / error / not-an-auction states ------------------------------
   if (listingQ.loading) {
     return (
@@ -239,17 +301,23 @@ export default function AuctionLive({ verified = false, onRequireDni, onBack }: 
     );
   }
   if (!listing.auction) {
+    const owner = !!(user && listing.seller && user.id === listing.seller.id);
     return (
       <div className="yal__empty">
-        <EmptyState icon={<Icon.Gavel size={26} />} title="Esta publicación no es una subasta"
-          description="Es una venta a precio fijo. Puedes comprarla directamente."
-          actions={<Button variant="primary" onClick={() => navigate('/listing/' + listing.id)}>Ver publicación</Button>} />
+        <EmptyState icon={<Icon.Gavel size={26} />} title="Esta subasta aún no está disponible"
+          description={owner
+            ? 'Termina de configurar tu subasta: define el precio inicial y la fecha de cierre.'
+            : 'Esta subasta todavía no está activa. Vuelve más tarde.'}
+          actions={owner
+            ? <Button variant="primary" onClick={() => navigate('/seller/new-auction', { state: { listingId: listing.id, title: listing.title } })}>Configurar subasta</Button>
+            : <Button variant="secondary" onClick={() => navigate('/inicio')}>Volver al inicio</Button>} />
       </div>
     );
   }
 
   const gallery = listing.images;
   const seller: any = listing.seller || {};
+  const isOwner = !!(user && seller && user.id === seller.id);
 
   return (
     <div style={{ maxWidth: 1180, margin: '0 auto', padding: '20px 24px 0' }}>
@@ -281,11 +349,18 @@ export default function AuctionLive({ verified = false, onRequireDni, onBack }: 
           <div className="yal__cat">{listing.category}{listing.condition ? ` · ${listing.condition}` : ''}</div>
           <h1 className="yal__title">{listing.title}</h1>
 
+          {isOwner && (
+            <div className="yal__owneractions">
+              <Button variant="secondary" size="sm" onClick={openEdit}>Editar</Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowDelete(true)}>Eliminar</Button>
+            </div>
+          )}
+
           <div className="yal__livebox">
             <div className="yal__lr">
               <div>
                 <div className="yal__lbl"><span className="yal__livedot" /> {isActive ? 'Puja actual' : 'Precio final'}</div>
-                <Price value={current} size={40} live={isActive} className={bumped ? 'yal__tick' : ''} />
+                <Price value={current} size={40} live={false} className={bumped ? 'yal__tick' : ''} />
               </div>
               <div className="yal__cdwrap">
                 <div className="yal__lbl" style={{ justifyContent: 'flex-end' }}><Icon.Clock size={13} /> {isActive ? 'Cierra en' : 'Finalizada'}</div>
@@ -299,7 +374,7 @@ export default function AuctionLive({ verified = false, onRequireDni, onBack }: 
                 <div className="yal__bidform">
                   <Input label="Tu puja" prefix="S/." mono size="lg" value={bid}
                     onChange={(e) => setBid(Number(e.target.value.replace(/\D/g, '')) || 0)} style={{ flex: 1, minWidth: 0 }} />
-                  <Button variant="live" size="lg" iconLeft={<Icon.Gavel size={18} />} onClick={onPlaceClick} disabled={submitting}>Pujar</Button>
+                  <Button variant="primary" size="lg" iconLeft={<Icon.Gavel size={18} />} onClick={onPlaceClick} disabled={submitting}>Pujar</Button>
                 </div>
                 <div className="yal__hint">
                   <Icon.AlertTriangle size={14} style={{ color: 'var(--warning)', flex: 'none', marginTop: 1 }} />
@@ -355,6 +430,37 @@ export default function AuctionLive({ verified = false, onRequireDni, onBack }: 
           <DniGate action="pujar"
             primaryAction={<Button fullWidth onClick={() => { setShowGate(false); onRequireDni && onRequireDni(); }}>Verificar mi identidad</Button>}
             secondaryAction={<Button variant="ghost" fullWidth onClick={() => setShowGate(false)}>Ahora no</Button>} />
+        </Dialog>
+      )}
+
+      {showEdit && (
+        <Dialog open onClose={() => setShowEdit(false)} width={540} title="Editar subasta"
+          footer={<><Button variant="ghost" onClick={() => setShowEdit(false)} disabled={savingOwner}>Cancelar</Button><Button variant="primary" onClick={saveEdit} disabled={savingOwner}>{savingOwner ? 'Guardando…' : 'Guardar cambios'}</Button></>}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <Input label="Título" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+            <Textarea label="Descripción" rows={3} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+            <Select label="Condición" value={form.condition} onChange={(e) => setForm((f) => ({ ...f, condition: e.target.value }))} options={CONDITIONS} />
+            <Select label="Categoría" value={form.categoryId} onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
+              options={(catsQ.data || []).map((c) => ({ value: String(c.id), label: c.name }))} />
+            {totalBids === 0 ? (
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Input label="Precio inicial (S/.)" prefix="S/." mono value={form.startingPrice}
+                  onChange={(e) => setForm((f) => ({ ...f, startingPrice: e.target.value.replace(/[^\d.]/g, '') }))} style={{ flex: 1, minWidth: 0 }} />
+                <Input label="Cierre" type="datetime-local" value={form.endsAt}
+                  onChange={(e) => setForm((f) => ({ ...f, endsAt: e.target.value }))} style={{ flex: 1, minWidth: 0 }} />
+              </div>
+            ) : (
+              <div className="yal__hint"><Icon.AlertTriangle size={14} style={{ color: 'var(--warning)', flex: 'none', marginTop: 1 }} /><span>No puedes cambiar el precio inicial ni la fecha: la subasta ya tiene pujas.</span></div>
+            )}
+          </div>
+        </Dialog>
+      )}
+
+      {showDelete && (
+        <Dialog open onClose={() => setShowDelete(false)} title="Eliminar publicación"
+          description={`¿Seguro que quieres eliminar "${listing.title}"? Se retira la subasta del marketplace.`}
+          footer={<><Button variant="ghost" onClick={() => setShowDelete(false)} disabled={savingOwner}>Cancelar</Button><Button variant="primary" onClick={doDelete} disabled={savingOwner}>{savingOwner ? 'Eliminando…' : 'Eliminar'}</Button></>}>
+          <div style={{ fontSize: 14, color: 'var(--text-muted)' }}>Si la subasta ya tiene pujas, considera dejarla activa hasta que cierre.</div>
         </Dialog>
       )}
     </div>
