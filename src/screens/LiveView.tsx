@@ -124,6 +124,17 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
     ? (auction.currentPrice == null ? auction.basePrice : auction.currentPrice + auction.bidIncrement)
     : 0;
 
+  // Auto-seed the bid input with the minimum next amount when the auction changes or a new bid lands.
+  React.useEffect(() => {
+    if (!auction) return;
+    setBid((prev) => {
+      const cur = parseFloat(prev);
+      if (!prev || isNaN(cur) || cur < minNext) return String(minNext);
+      return prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minNext, auction?.id]);
+
   const sendComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatText.trim()) return;
@@ -218,7 +229,7 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
                       onChange={(e: any) => { let v = e.target.value.replace(/[^\d.]/g, ''); if (Number(v) > 9999) v = '9999'; setBid(v); }}
                       style={{ flex: 1, minWidth: 0 }} />
                     <Button onClick={submitBid} disabled={submitting}
-                      iconLeft={Icon.Gavel ? <Icon.Gavel size={16} /> : null}>Pujar</Button>
+                      iconLeft={Icon.Gavel ? <Icon.Gavel size={16} /> : null}>Pujar S/. {minNext}</Button>
                   </div>
                 )}
                 {auction.status === 'SOLD' && auction.winnerName && (
