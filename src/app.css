@@ -10,22 +10,13 @@ body {
 #root { min-height: 100vh; }
 a { color: inherit; text-decoration: none; }
 
-/* Navbar (.ysh): en desktop la barra queda full-width (fondo + borde se mueven a
-   .ysh) pero su CONTENIDO se acota a --container-max y se centra, para que en
-   pantallas anchas el logo y las acciones no se estiren a los extremos.
-   Se toca SOLO .ysh__bar — nunca .ysh__nav — para no romper las pestañas inline
-   (Subastar/Lives) ni ocultar la búsqueda/acciones. Acotado a >720px para dejar
-   intacto el navbar móvil (hamburguesa + dropdown + fila de pestañas). */
+/* Navbar (.ysh__bar): en desktop los items (logo, pestañas, búsqueda, acciones) se
+   agrupan al centro con justify-content:center, dejando espacio simétrico a ambos
+   lados. La búsqueda deja de crecer (flex:0 1 460px) para que el centrado se note —
+   si no, su flex:1 absorbería todo el espacio libre. Mismo patrón que
+   .ysh__bar--centered del landing. Se toca SOLO .ysh__bar/.ysh__search — nunca
+   .ysh__nav (rompería las pestañas inline). Acotado a >720px: móvil intacto. */
 @media (min-width: 721px) {
-  .ysh {
-    background: var(--surface-card);
-    border-bottom: 1px solid var(--border-subtle);
-  }
-  .ysh > .ysh__bar {
-    max-width: var(--container-max);
-    width: 100%;
-    margin-inline: auto;
-    background: transparent;
-    border-bottom: none;
-  }
+  .ysh .ysh__bar { justify-content: center; }
+  .ysh .ysh__search { flex: 0 1 460px; }
 }
