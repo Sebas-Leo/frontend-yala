@@ -20,7 +20,7 @@ const css = `
 `;
 let ic = false; function ensure(){ if(!ic){ic=true;const s=document.createElement('style');s.textContent=css;document.head.appendChild(s);} }
 
-interface AuthProps { onAuth?: (profile: any) => void; }
+interface AuthProps { onAuth?: (profile: any, from?: string) => void; }
 export default function Auth({ onAuth }: AuthProps) {
   ensure();
   const { login, register } = useAuth();
@@ -49,7 +49,8 @@ export default function Auth({ onAuth }: AuthProps) {
     setBusy(true);
     try {
       const profile = await action();
-      if (onAuth) onAuth(profile);
+      // Bounce back to wherever the user was headed before /login (e.g. a payment link), else default.
+      if (onAuth) onAuth(profile, location.state?.from);
     } catch (err) {
       setError((err && err.message) || 'No pudimos completar la operación. Intenta de nuevo.');
     } finally {

@@ -2,6 +2,7 @@ import React from 'react';
 import { Button, EmptyState, CardSkeleton, Pagination, Icon } from '../ds';
 import { listNotifications, markRead, markAllRead } from '../api/notifications';
 import { notificationFromDto } from '../api/adapters';
+import { useUnread } from '../context/UnreadContext';
 import { useFetch } from '../hooks/useFetch';
 import { usePaginatedQuery } from '../hooks/usePaginatedQuery';
 
@@ -34,6 +35,7 @@ export default function Notifications() {
   ensure();
   const { page, size, setPage } = usePaginatedQuery({ defaultSize: 20 });
   const { data, loading, error, refetch } = useFetch((signal) => listNotifications({ page, size, signal }), [page, size]);
+  const { refresh: refreshUnread, setZero } = useUnread();
 
   // Local overlay so read toggles reflect immediately without a refetch.
   const [readMap, setReadMap] = React.useState({});
@@ -49,12 +51,13 @@ export default function Notifications() {
   const markOne = async (id) => {
     if (readMap[id]) return;
     setReadMap((m) => ({ ...m, [id]: true }));
-    try { await markRead(id); } catch { /* keep the optimistic state */ }
+    try { await markRead(id); refreshUnread(); } catch { /* keep the optimistic state */ }
   };
   const markAll = async () => {
     const next = {};
     items.forEach((n) => { next[n.id] = true; });
     setReadMap((m) => ({ ...m, ...next }));
+    setZero(); // clear the navbar badge immediately
     try { await markAllRead(); } catch { refetch(); }
   };
 
