@@ -2,12 +2,13 @@ import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Avatar, ReputationStars, Tabs, AuctionCard, ListingCard, CardSkeleton,
-  EmptyState, Pagination, Icon,
+  EmptyState, Pagination, Icon, Button, Price, StatusBadge,
 } from '../ds';
 import { getUser, getUserListings } from '../api/users';
 import { getSellerStore } from '../api/seller';
 import { listReviewsByUser } from '../api/reviews';
-import { auctionCardFrom, listingCardFrom, reviewFromDto, userFromDto } from '../api/adapters';
+import { listMyOrders } from '../api/orders';
+import { auctionCardFrom, listingCardFrom, reviewFromDto, userFromDto, orderFromDto } from '../api/adapters';
 import { useFetch } from '../hooks/useFetch';
 import { useAuth } from '../auth/AuthContext';
 
@@ -30,6 +31,13 @@ const css = `
 .sp__revauth{font-size:14px;font-weight:700;color:var(--text-strong);flex:1;}
 .sp__revdate{font-size:12px;color:var(--text-subtle);font-family:var(--font-mono);}
 .sp__revtxt{font-size:14px;color:var(--text-body);line-height:1.55;}
+.sp__won{display:flex;flex-direction:column;gap:10px;margin-top:18px;}
+.sp__wonrow{display:flex;align-items:center;gap:14px;background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:12px 14px;}
+.sp__wonimg{width:52px;height:52px;border-radius:10px;object-fit:cover;flex:none;background:var(--surface-sunken);}
+.sp__woninfo{flex:1;min-width:0;}
+.sp__wontt{font-size:14px;font-weight:700;color:var(--text-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sp__wonsub{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted);margin-top:4px;}
+.sp__wonact{flex:none;}
 .sp__store{background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:16px 18px;margin:0 0 22px;}
 .sp__storehd{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:800;color:var(--text-strong);margin-bottom:6px;}
 .sp__storerow{display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--text-body);}
@@ -62,6 +70,11 @@ export default function SellerProfile({ onBack, onOpenAuction }: SellerProfilePr
     { enabled: ready && !!userQ.data?.isVerifiedSeller });
   const listingsQ = useFetch((signal) => getUserListings(sellerId, { page: lPage, size: 12, signal }), [sellerId, lPage], { enabled: ready });
   const reviewsQ = useFetch((signal) => listReviewsByUser(sellerId, { page: rPage, size: 10, signal }), [sellerId, rPage], { enabled: ready });
+
+  // "Subastas ganadas" only on the user's OWN profile: their buyer orders (auctions won).
+  const isMe = id === 'me' || (!!user && String(sellerId) === String(user?.id));
+  const wonQ = useFetch((signal) => listMyOrders({ page: 0, size: 20, signal }), [sellerId], { enabled: ready && isMe });
+  const won = (wonQ.data?.content || []).map((o) => orderFromDto(o, user?.id));
 
   const s = userQ.data ? userFromDto(userQ.data) : null;
   const listings = listingsQ.data?.content || [];
@@ -114,6 +127,7 @@ export default function SellerProfile({ onBack, onOpenAuction }: SellerProfilePr
 
       <Tabs value={tab} onChange={setTab} tabs={[
         { value: 'listings', label: 'Publicaciones', count: listingsQ.data?.totalElements ?? 0 },
+        ...(isMe ? [{ value: 'won', label: 'Subastas ganadas', count: wonQ.data?.totalElements ?? 0 }] : []),
         { value: 'reviews', label: 'Reseñas', count: reviewsCount },
       ]} />
 
@@ -146,6 +160,29 @@ export default function SellerProfile({ onBack, onOpenAuction }: SellerProfilePr
               <Pagination page={lPage + 1} total={listingsQ.data?.totalPages ?? 0} onChange={(p) => setLPage(p - 1)} />
             </div>
           </>
+        )
+      ) : tab === 'won' ? (
+        wonQ.loading ? (
+          <div className="sp__won">{Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} />)}</div>
+        ) : won.length === 0 ? (
+          <EmptyState icon={Icon.Gavel ? <Icon.Gavel size={24} /> : <Icon.Package size={24} />} title="Sin subastas ganadas"
+            description="Cuando ganes una subasta, aparecerá aquí para que la pagues." />
+        ) : (
+          <div className="sp__won">
+            {won.map((o) => (
+              <div className="sp__wonrow" key={o.id}>
+                <img className="sp__wonimg" src={o.image} alt="" />
+                <div className="sp__woninfo">
+                  <div className="sp__wontt">{o.title}</div>
+                  <div className="sp__wonsub"><StatusBadge kind="order" status={o.status} /><Price value={o.amount} size="sm" /></div>
+                </div>
+                <div className="sp__wonact">
+                  {o.status === 'PENDING' && <Button variant="primary" size="sm" onClick={() => navigate('/checkout?orderId=' + o.id)}>Pagar</Button>}
+                  {o.status === 'CONFIRMED' && <Button variant="secondary" size="sm" iconLeft={Icon.Star ? <Icon.Star size={14} /> : null} onClick={() => navigate('/review/' + o.id)}>Reseñar</Button>}
+                </div>
+              </div>
+            ))}
+          </div>
         )
       ) : (
         reviewsQ.loading ? (
