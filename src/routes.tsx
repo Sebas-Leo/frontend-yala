@@ -51,7 +51,7 @@ export interface RouteDef {
 export function buildRoutes(ctx: any): RouteDef[] {
   const { navigate, toast, auth } = ctx;
 
-  const handleAuth = (_profile: any) => navigate('/inicio');
+  const handleAuth = (_profile: any, from?: string) => navigate(from || '/inicio');
   const verifyIdentity = () => {
     auth.setIdentityVerified(true);
     toast.success('Identidad verificada', 'Ya puedes pujar y comprar en Yala.', 'Shield');

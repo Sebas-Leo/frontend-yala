@@ -13,7 +13,7 @@ export default function ProtectedRoute({ children, roles }: { children: React.Re
 
   if (loading) return null;
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
   if (roles && roles.length > 0 && !roles.includes(role)) {
     return <Navigate to="/inicio" replace />;

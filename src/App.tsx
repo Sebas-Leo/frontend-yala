@@ -6,6 +6,7 @@ import ProtectedRoute from './auth/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import AppShell from './screens/AppShell';
 import Footer from './components/Footer';
+import { UnreadProvider } from './context/UnreadContext';
 import { buildRoutes } from './routes';
 
 function Loading() {
@@ -45,7 +46,7 @@ export default function App() {
   const routes = buildRoutes({ navigate, toast, auth });
 
   return (
-    <>
+    <UnreadProvider>
       <AppShell
         user={shellUser}
         onNav={(d) => navigate(navDest[d] || '/')}
@@ -68,6 +69,6 @@ export default function App() {
         </ErrorBoundary>
       </div>
       <Footer />
-    </>
+    </UnreadProvider>
   );
 }

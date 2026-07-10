@@ -1,12 +1,11 @@
 import React from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { IconButton, Avatar, Icon } from '../ds';
-import { getUnreadCount } from '../api/notifications';
 import { subscribeNotifications } from '../api/realtime';
 import { notificationFromDto } from '../api/adapters';
 import { useAuth } from '../auth/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { useFetch } from '../hooks/useFetch';
+import { useUnread } from '../context/UnreadContext';
 import { useDebounce } from '../hooks/useDebounce';
 
 const shellCSS = `
@@ -58,14 +57,6 @@ const shellCSS = `
 let ic = false;
 function ensure() { if (!ic) { ic = true; const s = document.createElement('style'); s.textContent = shellCSS; document.head.appendChild(s); } }
 
-function readUnread(data: any) {
-  if (!data) return 0;
-  if (typeof data.unread === 'number') return data.unread;
-  if (typeof data.count === 'number') return data.count;
-  const first = Object.values(data)[0];
-  return typeof first === 'number' ? first : 0;
-}
-
 interface AppShellProps { user?: any; onNav?: (d: any) => void; onCat?: () => void; onLogout?: () => void; }
 
 // `user` is null for a guest session, or { name, verified } for an authed one.
@@ -82,29 +73,21 @@ export default function AppShell({ onNav, onLogout, user = null }: AppShellProps
 
   const [menuOpen, setMenuOpen] = React.useState(false);
 
-  // Unread badge — only meaningful for an authed user; refreshed periodically.
-  const unreadQ = useFetch((signal) => getUnreadCount({ signal }), [!!user], { enabled: !!user });
-  const unread = readUnread(unreadQ.data);
-  React.useEffect(() => {
-    if (!user) return undefined;
-    const t = setInterval(() => unreadQ.refetch(), 30000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  // Unread badge count comes from the shared UnreadContext (kept in sync with the Notifications screen,
+  // so "marcar todas como leídas" clears it instantly).
+  const { unread, refresh: refreshUnread } = useUnread();
 
-  // Real-time notifications: STOMP (`/topic/notifications/{userId}`) pushes the
-  // badge live and pops a toast the instant something happens, instead of
-  // waiting up to 30s for the poll above (which stays as a safety net). The
-  // shell `user` prop carries no id, so the real id comes from the auth context.
+  // Real-time notifications: STOMP (`/topic/notifications/{userId}`) pops a toast and refreshes the badge
+  // the instant something happens. The shell `user` prop carries no id, so it comes from the auth context.
   const userId = auth.user?.id;
-  const refetchUnreadRef = React.useRef(unreadQ.refetch);
-  refetchUnreadRef.current = unreadQ.refetch;
+  const refreshUnreadRef = React.useRef(refreshUnread);
+  refreshUnreadRef.current = refreshUnread;
   React.useEffect(() => {
     if (!userId) return undefined;
     const unsub = subscribeNotifications(userId, (dto) => {
       const n = notificationFromDto(dto);
       if (n) toast.show({ tone: n.tone, title: n.title, message: n.msg, icon: n.icon });
-      if (refetchUnreadRef.current) refetchUnreadRef.current();
+      refreshUnreadRef.current();
     });
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
