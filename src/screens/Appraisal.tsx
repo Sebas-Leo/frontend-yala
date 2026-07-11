@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Icon, EmptyState } from '../ds';
 import { identifyPhoto, type AppraisalResult } from '../api/appraisal';
 import { compressImage } from '../utils/appraisal';
@@ -66,11 +67,25 @@ interface Outcome {
 
 export default function Appraisal() {
   ensure();
+  const navigate = useNavigate();
   const fileRef = React.useRef<HTMLInputElement>(null);
   const [phase, setPhase] = React.useState<Phase>('idle');
   const [imageUrl, setImageUrl] = React.useState<string>('');
   const [outcome, setOutcome] = React.useState<Outcome | null>(null);
   const [errMsg, setErrMsg] = React.useState('');
+
+  // Publica una subasta con la carta tasada: navega al flujo de crear publicación (AUCTION)
+  // con título, precio sugerido (media del rango JustTCG) e imagen ya cargados.
+  const onPublish = () => {
+    if (!outcome || outcome.kind !== 'matched' || !outcome.result.pricing) return;
+    const r = outcome.result;
+    const p = r.pricing;
+    const title = [r.character, r.franchise, r.variant].filter(Boolean).join(' ').trim() || p.itemName;
+    const suggestedPrice = Math.round(((p.priceMin + p.priceMax) / 2) * 100) / 100;
+    navigate('/seller/new-listing', {
+      state: { prefill: { title, suggestedPrice, imageDataUrl: imageUrl } },
+    });
+  };
 
   const reset = () => {
     setPhase('idle');
@@ -154,7 +169,7 @@ export default function Appraisal() {
         )}
 
         {phase === 'done' && outcome && (
-          <Result outcome={outcome} imageUrl={imageUrl} onRetry={pick} onReset={reset} />
+          <Result outcome={outcome} imageUrl={imageUrl} onRetry={pick} onReset={reset} onPublish={onPublish} />
         )}
       </div>
     </div>
@@ -167,7 +182,7 @@ function confColor(c: number) {
   return 'var(--danger)';
 }
 
-function Result({ outcome, imageUrl, onRetry, onReset }: { outcome: Outcome; imageUrl: string; onRetry: () => void; onReset: () => void }) {
+function Result({ outcome, imageUrl, onRetry, onReset, onPublish }: { outcome: Outcome; imageUrl: string; onRetry: () => void; onReset: () => void; onPublish: () => void }) {
   const { result, kind } = outcome;
 
   // --- Caso límite: foto mala / no es una carta TCG ---
@@ -243,6 +258,9 @@ function Result({ outcome, imageUrl, onRetry, onReset }: { outcome: Outcome; ima
       </div>
 
       <div className="ap__foot">
+        <Button variant="primary" onClick={onPublish}>
+          {Icon.Gavel ? <Icon.Gavel size={16} /> : null} Publicar subasta con este precio
+        </Button>
         <Button variant="secondary" onClick={onReset}><Icon.Image size={16} /> Tasar otra carta</Button>
       </div>
 
