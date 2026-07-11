@@ -5,7 +5,7 @@ import { Track } from 'livekit-client';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button, Input, Price, Icon } from '../ds';
 import { useToast } from '../context/ToastContext';
-import { startLive, endLive, createFlashAuction, closeFlashAuction, listComments, postComment, summarizeComments } from '../api/live';
+import { startLive, endLive, createFlashAuction, closeFlashAuction, listComments, postComment, summarizeComments, detectProduct } from '../api/live';
 import { subscribeLive, subscribeLiveChat } from '../api/realtime';
 import type { FlashAuction, LiveComment, LiveToken, LiveUpdateMessage } from '../types';
 
@@ -33,6 +33,13 @@ const css = `
 .ygl__msg{font-size:13px;line-height:1.4;color:var(--text-body);}
 .ygl__msg b{color:var(--text-strong);font-weight:700;margin-right:5px;}
 .ygl__chatform{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border-subtle);}
+.ygl__voice{gap:9px;}
+.ygl__voicehd{display:flex;align-items:center;gap:8px;}
+.ygl__beta{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:var(--brand);border-radius:999px;padding:1px 7px;}
+.ygl__voicerow{display:flex;gap:8px;flex-wrap:wrap;}
+.ygl__voicehint{font-size:12.5px;color:var(--text-muted);line-height:1.45;}
+.ygl__voicewarn{font-size:12.5px;color:var(--warning-700,#C7891A);line-height:1.45;}
+.ygl__voiceheard{font-size:12px;color:var(--text-subtle);font-style:italic;background:var(--surface-sunken);border-radius:8px;padding:6px 10px;}
 @media(max-width:900px){.ygl__grid{flex-direction:column;height:auto;}.ygl__stage{aspect-ratio:16/9;flex:none;}.ygl__panel{width:100%;height:auto;overflow:visible;}}
 @media(max-width:600px){.ygl{padding:14px;}.ygl__chat{height:auto;max-height:50vh;}.ygl__setup{margin:16px auto;padding:20px;}.ygl__qr{display:none;}}
 `;
@@ -77,6 +84,100 @@ export default function GoLive({ onBack }: Props) {
   const [chatText, setChatText] = React.useState('');
   const [summary, setSummary] = React.useState<string | null>(null);
   const [summarizing, setSummarizing] = React.useState(false);
+
+  // Voice → product (ADR-002): the seller says the trigger phrase + describes the collectible;
+  // Web Speech API transcribes it, the backend extracts attributes, and we pre-fill / auto-create
+  // the flash auction depending on the mode toggle.
+  const TRIGGER = 'iniciemos esta nueva subasta';
+  const SpeechRecognition: any = typeof window !== 'undefined'
+    ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    : null;
+  const [voiceOn, setVoiceOn] = React.useState(false);
+  const [autoMode, setAutoMode] = React.useState(false); // false = con confirmación, true = automático
+  const [heard, setHeard] = React.useState('');
+  const [detecting, setDetecting] = React.useState(false);
+  // Refs so the long-lived recognition callback reads fresh values.
+  const autoModeRef = React.useRef(autoMode); autoModeRef.current = autoMode;
+  const tokenRef = React.useRef(token); tokenRef.current = token;
+  const capturingRef = React.useRef(false);
+  const partsRef = React.useRef<string[]>([]);
+  const captureTimer = React.useRef<any>(null);
+
+  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  const onDetected = async (description: string) => {
+    const tk = tokenRef.current;
+    if (!tk || !description.trim()) return;
+    setDetecting(true);
+    try {
+      const p: any = await detectProduct(tk.streamId, description.trim());
+      const canAuto = autoModeRef.current && p?.title && p?.suggestedBasePrice != null && (p?.confidence ?? 0) >= 0.6;
+      if (canAuto) {
+        const a = await createFlashAuction(tk.streamId, {
+          title: p.title, basePrice: Number(p.suggestedBasePrice) || 1, bidIncrement: 1,
+        });
+        setAuction(a);
+        toast.success('Subasta creada por voz', p.title, 'Gavel');
+      } else {
+        // Confirmation mode (or low confidence / missing price): pre-fill the form to review.
+        setFaTitle(p?.title || description.trim());
+        if (p?.suggestedBasePrice != null) setFaBase(String(p.suggestedBasePrice));
+        toast.success('Producto detectado', 'Revisa los datos y lanza la subasta.', 'Gavel');
+      }
+    } catch (err: any) {
+      toast.error('No se pudo detectar el producto', err?.message || 'Intenta de nuevo.');
+    } finally {
+      setDetecting(false);
+    }
+  };
+
+  // Web Speech API lifecycle: runs while voiceOn && live.
+  React.useEffect(() => {
+    if (!voiceOn || !token || !SpeechRecognition) return undefined;
+    const rec = new SpeechRecognition();
+    rec.lang = 'es-PE';
+    rec.continuous = true;
+    rec.interimResults = true;
+    let stopped = false;
+
+    rec.onresult = (e: any) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        const text = res[0].transcript;
+        setHeard(text.trim().slice(-80));
+        if (!res.isFinal) continue;
+        if (!capturingRef.current) {
+          if (norm(text).includes(TRIGGER)) {
+            // Trigger heard — capture this utterance + the next few seconds of speech.
+            capturingRef.current = true;
+            partsRef.current = [text.trim()];
+            clearTimeout(captureTimer.current);
+            captureTimer.current = setTimeout(() => {
+              capturingRef.current = false;
+              const desc = partsRef.current.join(' ').trim();
+              partsRef.current = [];
+              if (desc) onDetected(desc);
+            }, 7000);
+          }
+        } else {
+          partsRef.current.push(text.trim());
+        }
+      }
+    };
+    // Chrome stops recognition periodically; restart while active.
+    rec.onend = () => { if (!stopped) { try { rec.start(); } catch { /* already starting */ } } };
+    rec.onerror = () => { /* ignore transient errors; onend restarts */ };
+    try { rec.start(); } catch { /* ignore */ }
+
+    return () => {
+      stopped = true;
+      clearTimeout(captureTimer.current);
+      capturingRef.current = false;
+      partsRef.current = [];
+      try { rec.stop(); } catch { /* ignore */ }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceOn, token]);
 
   React.useEffect(() => {
     if (!token) return;
@@ -208,6 +309,33 @@ export default function GoLive({ onBack }: Props) {
         <div className="ygl__grid">
           <PublisherStage qrUrl={liveUrl} />
           <div className="ygl__panel">
+            <div className="ygl__card ygl__voice">
+              <div className="ygl__voicehd">
+                <span className="ygl__label">Detección por voz</span>
+                <span className="ygl__beta">beta</span>
+              </div>
+              {!SpeechRecognition ? (
+                <div className="ygl__voicewarn">
+                  Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.
+                </div>
+              ) : (
+                <>
+                  <div className="ygl__voicerow">
+                    <Button size="sm" variant={voiceOn ? 'live' : 'secondary'} onClick={() => setVoiceOn((v) => !v)}>
+                      {voiceOn ? (detecting ? 'Analizando…' : 'Escuchando…') : 'Activar detección por voz'}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setAutoMode((m) => !m)}>
+                      Modo: {autoMode ? 'Automático' : 'Confirmación'}
+                    </Button>
+                  </div>
+                  <div className="ygl__voicehint">
+                    Di <b>«Iniciemos esta nueva subasta»</b> y describe el coleccionable.
+                    {autoMode ? ' La subasta se creará sola.' : ' Rellenamos el formulario para que lo revises.'}
+                  </div>
+                  {voiceOn && heard && <div className="ygl__voiceheard">…{heard}</div>}
+                </>
+              )}
+            </div>
             <div className="ygl__card">
               <div className="ygl__label">Subasta flash</div>
               {auction && auction.status === 'ACTIVE' ? (
