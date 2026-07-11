@@ -47,21 +47,20 @@ let ic = false;
 function ensure() { if (!ic) { ic = true; const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); } }
 
 // ── Audio helpers for the mic → transcription pipeline (ADR-002 Fase 3) ──────────
-// Crude decimation to 16 kHz (enough for speech STT); avoids pulling in a resampler.
-function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
-  if (inputRate <= 16000) return input;
-  const ratio = inputRate / 16000;
-  const outLen = Math.floor(input.length / ratio);
-  const out = new Float32Array(outLen);
-  for (let i = 0; i < outLen; i++) out[i] = input[Math.floor(i * ratio)];
-  return out;
+// RMS (loudness) of a window; used to skip near-silent chunks so Whisper doesn't
+// hallucinate random text (often CJK/"chino") on silence.
+function rms(samples: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+  return Math.sqrt(sum / Math.max(1, samples.length));
 }
 
-// Encode mono Float32 samples as a 16-bit PCM WAV blob at 16 kHz.
-function encodeWav16k(samples: Float32Array): Blob {
+// Encode mono Float32 samples as a 16-bit PCM WAV blob at the given sample rate.
+// We send clean audio at the native rate (OpenAI resamples) instead of a crude
+// decimation, which introduced aliasing and garbled the speech.
+function encodeWav(samples: Float32Array, rate: number): Blob {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
-  const rate = 16000;
   const writeStr = (off: number, s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
   writeStr(0, 'RIFF'); view.setUint32(4, 36 + samples.length * 2, true); writeStr(8, 'WAVE');
   writeStr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
@@ -119,7 +118,6 @@ export default function GoLive({ onBack }: Props) {
   // mic continuo (WebAudio), mandamos ventanas ~3s solapadas al backend, y sobre un buffer de texto
   // acumulado detectamos la frase clave con match tolerante (ignora espacios/tildes → aunque el corte
   // parta la frase se detecta). onDetected extrae atributos y llena/crea la subasta según el modo.
-  const TRIGGER_COMPACT = 'iniciemosestanuevasubasta';
   const [voiceOn, setVoiceOn] = React.useState(false);
   const [autoMode, setAutoMode] = React.useState(false); // false = con confirmación, true = automático
   const [heard, setHeard] = React.useState('');
@@ -137,7 +135,7 @@ export default function GoLive({ onBack }: Props) {
   const compact = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
 
   // Fed by each transcribed chunk: append to a rolling buffer, detect the trigger, then capture the
-  // following ~7s of speech as the product description.
+  // following seconds of speech as the product description.
   const onTranscript = (text: string) => {
     if (!text || !text.trim()) return;
     setHeard(text.trim().slice(-80));
@@ -146,17 +144,20 @@ export default function GoLive({ onBack }: Props) {
       return;
     }
     bufferRef.current = (bufferRef.current + ' ' + text.trim()).slice(-1200);
-    if (compact(bufferRef.current).includes(TRIGGER_COMPACT)) {
+    // Tolerant trigger: the distinctive tail "nueva subasta" rarely varies across STT results,
+    // so we don't require the exact full phrase (which broke on "Iniciamos" vs "Iniciemos", etc.).
+    if (compact(bufferRef.current).includes('nuevasubasta')) {
       capturingRef.current = true;
       partsRef.current = [text.trim()];
       bufferRef.current = '';
+      toast.success('Frase detectada', 'Escuchando el producto…', 'Gavel');
       clearTimeout(captureTimer.current);
       captureTimer.current = setTimeout(() => {
         capturingRef.current = false;
         const desc = partsRef.current.join(' ').trim();
         partsRef.current = [];
         if (desc) onDetected(desc);
-      }, 7000);
+      }, 5000);
     }
   };
 
@@ -205,6 +206,7 @@ export default function GoLive({ onBack }: Props) {
         });
         if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
         ac = new (window.AudioContext || (window as any).webkitAudioContext)();
+        try { await ac.resume(); } catch { /* some browsers start running already */ }
         sampleRate = ac.sampleRate;
         source = ac.createMediaStreamSource(stream);
         processor = (ac as any).createScriptProcessor(4096, 1, 1);
@@ -214,16 +216,22 @@ export default function GoLive({ onBack }: Props) {
           const maxKeep = sampleRate * 5; // keep the last ~5s
           if (pcm.length > maxKeep) pcm = pcm.slice(pcm.length - maxKeep);
         };
+        // Route through a silent gain node so the processor keeps firing without the
+        // host hearing their own mic (feedback).
+        const sink = ac.createGain();
+        sink.gain.value = 0;
         source.connect(processor);
-        processor.connect(ac.destination);
+        processor.connect(sink);
+        sink.connect(ac.destination);
 
         // Every ~2s send the last ~3s of audio (=> ~1s overlap) so no word is lost at boundaries.
         chunkTimer = setInterval(() => {
           const tk = tokenRef.current;
           if (!tk || pcm.length < sampleRate) return; // wait for ~1s of audio
           const windowLen = Math.floor(sampleRate * 3);
-          const slice = pcm.slice(Math.max(0, pcm.length - windowLen));
-          const blob = encodeWav16k(downsampleTo16k(Float32Array.from(slice), sampleRate));
+          const slice = Float32Array.from(pcm.slice(Math.max(0, pcm.length - windowLen)));
+          if (rms(slice) < 0.012) return; // skip near-silent windows (avoid STT hallucination)
+          const blob = encodeWav(slice, sampleRate);
           transcribeChunk(tk.streamId, blob)
             .then((r: any) => onTranscript(r?.text || ''))
             .catch(() => { /* ignore transient errors */ });
