@@ -64,3 +64,17 @@ export function postComment(streamId: number | string, text: string) {
 export function summarizeComments(streamId: number | string, { limit = 50 }: { limit?: number } = {}) {
   return api.post(`/live/${streamId}/comments/summary`, undefined, { params: { limit } });
 }
+
+// ----- Highlight clips (seller-only) -----
+
+// The seller's own lives (incl. finished) with their auto-generated highlight clips.
+// Each item: { id, title, status, startedAt, endedAt, recordingStatus, clips: [...] }.
+export function listMyLives({ signal }: ReqOpts = {}) {
+  return api.get('/live/mine', { signal });
+}
+
+// Highlight clips of a single live (seller-only). Each: { id, title, caption, reason,
+// startMs, endMs, url, format, status }.
+export function listLiveClips(streamId: number | string, { signal }: ReqOpts = {}) {
+  return api.get(`/live/${streamId}/clips`, { signal });
+}
