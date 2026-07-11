@@ -78,3 +78,10 @@ export function listMyLives({ signal }: ReqOpts = {}) {
 export function listLiveClips(streamId: number | string, { signal }: ReqOpts = {}) {
   return api.get(`/live/${streamId}/clips`, { signal });
 }
+
+// Voice → product (seller-only, ADR-002). Sends the seller's spoken description of a
+// collectible (captured by the browser after the trigger phrase) and gets back extracted
+// flash-auction attributes: { title, category, condition, suggestedBasePrice, confidence }.
+export function detectProduct(streamId: number | string, transcript: string) {
+  return api.post(`/live/${streamId}/detect-product`, { transcript });
+}
