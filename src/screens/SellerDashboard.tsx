@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Tabs, Button, AuctionCard, ListingCard, CardSkeleton, EmptyState, Icon } from '../ds';
 import { getUserListings } from '../api/users';
 import { listMySales } from '../api/orders';
+import { listMyLives } from '../api/live';
 import { subscribeNotifications } from '../api/realtime';
 import { auctionCardFrom, listingCardFrom } from '../api/adapters';
 import { useFetch } from '../hooks/useFetch';
@@ -44,9 +45,25 @@ const css = `
 .yd__badge--CANCELLED{background:var(--surface-sunken);color:var(--text-muted);}
 .yd__saleswrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 .yd__sales{min-width:540px;}
-@media(max-width:1080px){.yd__metrics{grid-template-columns:repeat(2,1fr)}.yd__grid{grid-template-columns:repeat(3,1fr)}}
+.yd__clips{display:flex;flex-direction:column;gap:26px;}
+.yd__clipgroup{display:flex;flex-direction:column;gap:12px;}
+.yd__cliphd{display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border-subtle);padding-bottom:8px;}
+.yd__clipttl{font-size:16px;font-weight:800;color:var(--text-strong);}
+.yd__clipmeta{font-size:12.5px;color:var(--text-muted);white-space:nowrap;}
+.yd__clipnone{font-size:13px;color:var(--text-subtle);padding:6px 0;}
+.yd__clipgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+.yd__clip{background:var(--surface-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);overflow:hidden;display:flex;flex-direction:column;}
+.yd__clipvid{width:100%;aspect-ratio:16/9;object-fit:cover;background:#000;display:block;}
+.yd__clipph{width:100%;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--surface-sunken);color:var(--text-muted);font-size:13px;font-weight:600;}
+.yd__clipname{font-size:14px;font-weight:800;color:var(--text-strong);padding:12px 14px 0;}
+.yd__clipwhy{font-size:12px;color:var(--live-hover);padding:4px 14px 0;}
+.yd__clipcap{font-size:12.5px;color:var(--text-muted);padding:6px 14px 0;line-height:1.4;}
+.yd__clipdl{margin:12px 14px 14px;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;border-radius:var(--radius-md);background:var(--brand);color:#fff;font-weight:700;font-size:13px;text-decoration:none;transition:background var(--dur-fast);}
+.yd__clipdl:hover{background:var(--brand-hover);}
+.yd__clipbadge{margin:12px 14px 14px;display:inline-flex;align-items:center;justify-content:center;height:38px;border-radius:var(--radius-md);background:var(--surface-sunken);color:var(--text-muted);font-weight:700;font-size:13px;}
+@media(max-width:1080px){.yd__metrics{grid-template-columns:repeat(2,1fr)}.yd__grid{grid-template-columns:repeat(3,1fr)}.yd__clipgrid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:760px){.yd{padding:16px}.yd__head{flex-direction:column;align-items:flex-start}.yd__grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:480px){.yd__metrics{grid-template-columns:1fr}.yd__grid{grid-template-columns:1fr}}
+@media(max-width:480px){.yd__metrics{grid-template-columns:1fr}.yd__grid{grid-template-columns:1fr}.yd__clipgrid{grid-template-columns:1fr}}
 `;
 let ic = false; function ensure(){ if(!ic){ic=true;const s=document.createElement('style');s.textContent=css;document.head.appendChild(s);} }
 
@@ -83,6 +100,11 @@ export default function SellerDashboard({ onNew, onGoLive, onOpenAuction }: Sell
     { enabled: !!user?.id },
   );
   const sales = salesQ.data?.content || [];
+
+  // Highlight clips: the seller's own lives (incl. finished) with their auto-generated clips.
+  const clipsQ = useFetch((signal) => listMyLives({ signal }), [user?.id], { enabled: !!user?.id });
+  const myLives = (clipsQ.data as any[]) || [];
+  const totalClips = myLives.reduce((n, l) => n + (l.clips?.length || 0), 0);
 
   // Refresh the sales list in real time when a sale/notification arrives.
   const refetchSalesRef = React.useRef(salesQ.refetch);
@@ -135,10 +157,66 @@ export default function SellerDashboard({ onNew, onGoLive, onOpenAuction }: Sell
           { value: 'auctions', label: 'Mis subastas', count: auctionsList.length },
           { value: 'all', label: 'Todas mis publicaciones', count: total },
           { value: 'sales', label: 'Ventas / Ganadores', count: salesQ.data?.totalElements ?? sales.length },
+          { value: 'clips', label: 'Clips de tus lives', count: totalClips },
         ]} />
       </div>
 
-      {tab === 'sales' ? (
+      {tab === 'clips' ? (
+        clipsQ.loading ? (
+          <div className="yd__grid">{Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} />)}</div>
+        ) : clipsQ.error ? (
+          <EmptyState icon={<Icon.AlertTriangle size={26} />} title="No pudimos cargar tus clips"
+            description={clipsQ.error.message} actions={<Button variant="secondary" onClick={clipsQ.refetch}>Reintentar</Button>} />
+        ) : myLives.length === 0 ? (
+          <EmptyState icon={Icon.Video ? <Icon.Video size={24} /> : <Icon.TrendingUp size={24} />}
+            title="Aún no tienes transmisiones"
+            description="Cuando termines un live, generamos automáticamente clips de los mejores momentos para que los descargues y subas a tus redes." />
+        ) : (
+          <div className="yd__clips">
+            {myLives.map((live) => (
+              <section className="yd__clipgroup" key={live.id}>
+                <div className="yd__cliphd">
+                  <div className="yd__clipttl">{live.title}</div>
+                  <div className="yd__clipmeta">
+                    {live.endedAt ? new Date(live.endedAt).toLocaleDateString('es-PE', { dateStyle: 'medium' }) : 'En vivo'}
+                    {live.recordingStatus === 'PENDING' && ' · generando clips…'}
+                    {live.recordingStatus === 'FAILED' && ' · no se pudieron generar'}
+                  </div>
+                </div>
+                {(!live.clips || live.clips.length === 0) ? (
+                  <div className="yd__clipnone">
+                    {live.recordingStatus === 'PENDING'
+                      ? 'Estamos procesando los mejores momentos de este live…'
+                      : 'Este live no tiene clips.'}
+                  </div>
+                ) : (
+                  <div className="yd__clipgrid">
+                    {live.clips.map((clip) => (
+                      <div className="yd__clip" key={clip.id}>
+                        {clip.url ? (
+                          <video className="yd__clipvid" src={clip.url} controls preload="metadata" />
+                        ) : (
+                          <div className="yd__clipph">{Icon.Video ? <Icon.Video size={22} /> : null} Procesando…</div>
+                        )}
+                        <div className="yd__clipname">{clip.title || 'Momento destacado'}</div>
+                        {clip.reason && <div className="yd__clipwhy">{clip.reason}</div>}
+                        {clip.caption && <div className="yd__clipcap">{clip.caption}</div>}
+                        {clip.url ? (
+                          <a className="yd__clipdl" href={clip.url} download target="_blank" rel="noopener noreferrer">
+                            {Icon.Package ? <Icon.Package size={15} /> : null} Descargar
+                          </a>
+                        ) : (
+                          <span className="yd__clipbadge">Procesando</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        )
+      ) : tab === 'sales' ? (
         salesQ.loading ? (
           <div className="yd__grid">{Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} />)}</div>
         ) : salesQ.error ? (
