@@ -85,3 +85,11 @@ export function listLiveClips(streamId: number | string, { signal }: ReqOpts = {
 export function detectProduct(streamId: number | string, transcript: string) {
   return api.post(`/live/${streamId}/detect-product`, { transcript });
 }
+
+// Transcribe a short audio chunk of the host's mic (seller-only, ADR-002 Fase 3). Returns
+// { text } from gpt-4o-mini-transcribe — cross-browser, replaces Web Speech API.
+export function transcribeChunk(streamId: number | string, blob: Blob) {
+  const fd = new FormData();
+  fd.append('audio', blob, 'chunk.wav');
+  return api.post(`/live/${streamId}/transcribe`, fd);
+}
