@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button, Icon, EmptyState } from '../ds';
-import { identifyPhoto, type AppraisalIdentification } from '../api/appraisal';
-import { compressImage, matchDataset, type AppraisalMatch } from '../utils/appraisal';
+import { identifyPhoto, type AppraisalResult } from '../api/appraisal';
+import { compressImage } from '../utils/appraisal';
 
 const css = `
 .ap{max-width:820px;margin:0 auto;padding:24px;}
@@ -16,10 +16,7 @@ const css = `
 .ap__dropic{width:56px;height:56px;border-radius:50%;background:var(--brand-subtle);color:var(--brand);display:flex;align-items:center;justify-content:center;}
 .ap__droptt{font-size:15px;font-weight:700;color:var(--text-strong);}
 .ap__drophint{font-size:12.5px;color:var(--text-subtle);}
-.ap__preview{display:flex;gap:18px;align-items:center;}
 .ap__thumb{width:120px;height:120px;border-radius:var(--radius-lg);object-fit:cover;background:var(--surface-sunken);flex:none;border:1px solid var(--border-subtle);}
-.ap__pvinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;}
-.ap__pvactions{display:flex;gap:10px;flex-wrap:wrap;}
 .ap__loading{display:flex;flex-direction:column;align-items:center;gap:14px;padding:32px;text-align:center;}
 .ap__spinner{width:38px;height:38px;border-radius:50%;border:3px solid var(--border-subtle);border-top-color:var(--brand);animation:yala-spin .8s linear infinite;}
 @keyframes yala-spin{to{transform:rotate(360deg)}}
@@ -37,34 +34,33 @@ const css = `
 .ap__rangeval{font-size:30px;font-weight:800;color:var(--text-strong);letter-spacing:-.02em;}
 .ap__rangeval b{color:var(--brand);}
 .ap__comps{padding-top:18px;}
-.ap__complbl{font-size:13px;font-weight:700;color:var(--text-strong);margin-bottom:12px;}
+.ap__complbl{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;color:var(--text-strong);margin-bottom:12px;}
+.ap__src{font-size:11px;font-weight:600;color:var(--text-subtle);}
 .ap__comp{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);margin-bottom:8px;}
 .ap__comptt{font-size:13px;color:var(--text-strong);min-width:0;}
 .ap__comppr{font-size:13px;font-weight:700;color:var(--text-strong);font-variant-numeric:tabular-nums;white-space:nowrap;}
 .ap__foot{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;}
 .ap__ident{font-size:12.5px;color:var(--text-muted);background:var(--surface-sunken);border-radius:var(--radius-md);padding:12px 14px;margin-top:16px;line-height:1.5;}
 .ap__ident b{color:var(--text-strong);}
-@media(max-width:560px){.ap__preview{flex-direction:column;align-items:stretch}.ap__thumb{width:100%;height:200px}.ap__rhead{flex-direction:column}}
+@media(max-width:560px){.ap__thumb{width:100%;height:200px}.ap__rhead{flex-direction:column}}
 `;
 let ic = false;
 function ensure() { if (!ic) { ic = true; const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); } }
 
-const CATEGORIES = ['Funkos', 'Nendoroids', 'Mangas', 'Cómics', 'Cartas TCG'];
-const CAT_LABEL: Record<string, string> = {
-  funko: 'Funko', nendoroid: 'Nendoroid', manga: 'Manga', comic: 'Cómic', tcg: 'Carta TCG', unknown: 'Sin identificar',
-};
+// Juegos TCG soportados por JustTCG (los más comunes para el demo).
+const GAMES = ['Pokémon', 'Yu-Gi-Oh!', 'Magic', 'One Piece', 'Dragon Ball', 'Digimon', 'Lorcana'];
 
-function money(n: number) {
-  return 'S/. ' + n.toLocaleString('es-PE');
+function money(n: number, currency = 'USD') {
+  const sym = currency === 'USD' ? '$' : currency + ' ';
+  return sym + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 type Phase = 'idle' | 'analyzing' | 'done' | 'error';
 
 interface Outcome {
-  id: AppraisalIdentification;
-  match: AppraisalMatch | null;
-  // 'matched' -> hay ítem en dataset; 'no-match' -> IA identificó pero no está en la base;
-  // 'unclear' -> foto mala / no reconocible.
+  result: AppraisalResult;
+  // 'matched' -> hay precio en JustTCG; 'no-match' -> carta identificada sin precio;
+  // 'unclear' -> foto mala / no es una carta TCG.
   kind: 'matched' | 'no-match' | 'unclear';
 }
 
@@ -96,16 +92,16 @@ export default function Appraisal() {
       const dataUrl = await compressImage(file); // resize + JPEG en el cliente
       setImageUrl(dataUrl);
       setPhase('analyzing');
-      const id = await identifyPhoto(dataUrl);
+      const result = await identifyPhoto(dataUrl);
 
-      // Caso límite: foto mala / no es un coleccionable reconocible.
-      if (!id.recognizable || id.category === 'unknown' || id.confidence < 0.35) {
-        setOutcome({ id, match: null, kind: 'unclear' });
-        setPhase('done');
-        return;
+      // Caso límite: foto mala / no es una carta TCG reconocible.
+      if (!result.recognizable || result.category !== 'tcg' || result.confidence < 0.35) {
+        setOutcome({ result, kind: 'unclear' });
+      } else if (result.pricing) {
+        setOutcome({ result, kind: 'matched' });
+      } else {
+        setOutcome({ result, kind: 'no-match' });
       }
-      const match = matchDataset(id);
-      setOutcome({ id, match, kind: match ? 'matched' : 'no-match' });
       setPhase('done');
     } catch (err: any) {
       setErrMsg(err?.message || 'No pudimos analizar la foto. Intenta de nuevo.');
@@ -117,9 +113,9 @@ export default function Appraisal() {
     <div className="ap">
       <div className="ap__hd">
         <div className="ap__tt"><Icon.TrendingUp size={26} /> ¿Cuánto vale?</div>
-        <div className="ap__sub">Sube una foto de tu coleccionable y nuestro agente con IA lo identifica y te da un rango de precio estimado con ejemplos comparables.</div>
+        <div className="ap__sub">Sube una foto de tu carta TCG y nuestro agente con IA la identifica y te da su precio real de mercado con comparables. Precios en vivo de JustTCG.</div>
         <div className="ap__cats">
-          {CATEGORIES.map((c) => <span key={c} className="ap__chip">{c}</span>)}
+          {GAMES.map((c) => <span key={c} className="ap__chip">{c}</span>)}
         </div>
       </div>
 
@@ -129,7 +125,7 @@ export default function Appraisal() {
         {phase === 'idle' && (
           <div className="ap__drop" onClick={pick}>
             <div className="ap__dropic"><Icon.Image size={26} /></div>
-            <div className="ap__droptt">Sube una foto de tu coleccionable</div>
+            <div className="ap__droptt">Sube una foto de tu carta</div>
             <div className="ap__drophint">JPG, PNG o WEBP · la comprimimos antes de enviarla</div>
             <Button variant="primary" size="md" onClick={(e: any) => { e.stopPropagation(); pick(); }}>
               <Icon.Plus size={16} /> Elegir foto
@@ -142,8 +138,8 @@ export default function Appraisal() {
             {imageUrl && <img className="ap__thumb" src={imageUrl} alt="" />}
             <div className="ap__spinner" />
             <div>
-              <div className="ap__loadtt">Analizando la foto…</div>
-              <div className="ap__loadsub">La IA está identificando tu coleccionable</div>
+              <div className="ap__loadtt">Analizando la carta…</div>
+              <div className="ap__loadsub">Identificando con IA y consultando precios en JustTCG</div>
             </div>
           </div>
         )}
@@ -172,15 +168,15 @@ function confColor(c: number) {
 }
 
 function Result({ outcome, imageUrl, onRetry, onReset }: { outcome: Outcome; imageUrl: string; onRetry: () => void; onReset: () => void }) {
-  const { id, match, kind } = outcome;
+  const { result, kind } = outcome;
 
-  // --- Caso límite: foto mala / no reconocible ---
+  // --- Caso límite: foto mala / no es una carta TCG ---
   if (kind === 'unclear') {
     return (
       <EmptyState
         icon={<Icon.SearchX size={26} />}
-        title="No pudimos reconocer el coleccionable"
-        description={id.note || 'La foto puede estar borrosa o el objeto no es un coleccionable de las categorías soportadas. Sube una foto más clara, bien iluminada y bien encuadrada.'}
+        title="No pudimos reconocer una carta TCG"
+        description={result.note || 'La foto puede estar borrosa o no es una carta de un juego soportado. Sube una foto más clara, bien iluminada y bien encuadrada de la carta.'}
         actions={<Button variant="primary" onClick={onRetry}><Icon.Image size={16} /> Subir otra foto</Button>}
       />
     );
@@ -188,67 +184,70 @@ function Result({ outcome, imageUrl, onRetry, onReset }: { outcome: Outcome; ima
 
   const identLine = (
     <div className="ap__ident">
-      <b>Identificado por IA:</b> {CAT_LABEL[id.category] || id.category}
-      {id.franchise ? ` · ${id.franchise}` : ''}{id.character ? ` · ${id.character}` : ''}
-      {id.variant ? ` · ${id.variant}` : ''}
+      <b>Identificado por IA:</b> {result.franchise || 'TCG'}
+      {result.character ? ` · ${result.character}` : ''}
+      {result.variant ? ` · ${result.variant}` : ''}
     </div>
   );
 
-  // --- Caso límite: identificado pero sin match en el dataset ---
-  if (kind === 'no-match' || !match) {
+  // --- Caso límite: carta identificada pero sin precio en JustTCG ---
+  if (kind === 'no-match' || !result.pricing) {
     return (
       <div>
         <EmptyState
           icon={<Icon.Inbox size={26} />}
-          title="Aún no tenemos este ítem en la base"
-          description={`Reconocimos ${id.character || id.franchise || 'el coleccionable'}, pero todavía no está en nuestra base de datos de precios. Estamos sumando más ítems cada semana.`}
+          title="No encontramos su precio en JustTCG"
+          description={result.note || `Reconocimos ${result.character || 'la carta'}, pero no aparece en la base de precios de JustTCG. Prueba con una foto donde se lea mejor el nombre y el set.`}
         />
         {identLine}
         <div className="ap__foot">
-          <Button variant="secondary" onClick={onReset}>Tasar otra foto</Button>
+          <Button variant="secondary" onClick={onReset}>Tasar otra carta</Button>
         </div>
       </div>
     );
   }
 
-  // --- Match encontrado ---
-  const item = match.item;
+  // --- Match con precio real ---
+  const p = result.pricing;
   return (
     <div className="ap__result">
       <div className="ap__rhead">
         {imageUrl && <img className="ap__thumb" src={imageUrl} alt="" />}
         <div>
-          <span className="ap__rtag"><Icon.Check size={13} /> {CAT_LABEL[item.category]}</span>
-          <div className="ap__rname">{item.name}</div>
-          <div className="ap__rmeta">{item.franchise}{item.character && item.character !== item.franchise ? ` · ${item.character}` : ''}{id.variant ? ` · ${id.variant}` : ''}</div>
+          <span className="ap__rtag"><Icon.Check size={13} /> {result.franchise || 'TCG'}</span>
+          <div className="ap__rname">{p.itemName}</div>
+          <div className="ap__rmeta">{result.variant ? result.variant : 'Carta TCG'}</div>
           <div className="ap__conf">
-            <span className="ap__confdot" style={{ background: confColor(id.confidence) }} />
-            Confianza de identificación: {Math.round(id.confidence * 100)}%
+            <span className="ap__confdot" style={{ background: confColor(result.confidence) }} />
+            Confianza de identificación: {Math.round(result.confidence * 100)}%
           </div>
         </div>
       </div>
 
       <div className="ap__range">
-        <div className="ap__rangelbl">Rango de precio estimado</div>
-        <div className="ap__rangeval"><b>{money(item.priceMin)}</b> — <b>{money(item.priceMax)}</b></div>
+        <div className="ap__rangelbl">Rango de precio de mercado</div>
+        <div className="ap__rangeval"><b>{money(p.priceMin, p.currency)}</b> — <b>{money(p.priceMax, p.currency)}</b></div>
       </div>
 
       <div className="ap__comps">
-        <div className="ap__complbl">Comparables recientes</div>
-        {item.comparables.map((c, i) => (
+        <div className="ap__complbl">
+          <span>Comparables reales</span>
+          <span className="ap__src">Fuente: JustTCG · {p.currency}</span>
+        </div>
+        {p.comparables.map((c, i) => (
           <div className="ap__comp" key={i}>
             <span className="ap__comptt">{c.title}</span>
-            <span className="ap__comppr">{money(c.price)}</span>
+            <span className="ap__comppr">{money(c.price, p.currency)}</span>
           </div>
         ))}
       </div>
 
       <div className="ap__foot">
-        <Button variant="secondary" onClick={onReset}><Icon.Image size={16} /> Tasar otra foto</Button>
+        <Button variant="secondary" onClick={onReset}><Icon.Image size={16} /> Tasar otra carta</Button>
       </div>
 
       <div className="ap__ident" style={{ marginTop: 12 }}>
-        <b>Nota:</b> es una estimación referencial basada en comparables del mercado; el precio real depende del estado, la edición y la demanda.
+        <b>Nota:</b> precios reales de mercado (JustTCG) en {p.currency}; el valor final depende del estado, la edición y la demanda.
       </div>
     </div>
   );

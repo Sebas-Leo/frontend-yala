@@ -1,11 +1,6 @@
-// Client-side helpers for the "Agente de Tasación por Foto":
-//   - compressImage: resize + re-encode the photo before sending it to the API
-//     (never upload a heavy raw photo).
-//   - matchDataset: match the AI identification against the local dataset by
-//     category + franchise + character (normalized, fuzzy — not exact text).
-
-import { APPRAISAL_DATASET, type DatasetItem } from '../data/appraisalDataset';
-import type { AppraisalIdentification } from '../api/appraisal';
+// Client-side helper for the "Agente de Tasación por Foto": resize + re-encode the
+// photo before sending it to the API (never upload a heavy raw photo). Identification
+// and pricing happen on the backend (OpenAI Vision + JustTCG).
 
 const MAX_DIM = 1024;
 const JPEG_QUALITY = 0.8;
@@ -40,53 +35,4 @@ export function compressImage(file: File): Promise<string> {
     };
     img.src = url;
   });
-}
-
-// Strip accents, lowercase, collapse spaces/punctuation for fuzzy comparison.
-function norm(s: string): string {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// true if a and b overlap either direction (substring), tolerant to extra words.
-function overlaps(a: string, b: string): boolean {
-  const na = norm(a);
-  const nb = norm(b);
-  if (!na || !nb) return false;
-  if (na.includes(nb) || nb.includes(na)) return true;
-  // token overlap: any shared word of length >= 3
-  const setB = new Set(nb.split(' '));
-  return na.split(' ').some((w) => w.length >= 3 && setB.has(w));
-}
-
-export interface AppraisalMatch {
-  item: DatasetItem;
-  score: number;
-}
-
-// Returns the best dataset match for an identification, or null if none is convincing.
-export function matchDataset(id: AppraisalIdentification): AppraisalMatch | null {
-  if (!id || id.category === 'unknown') return null;
-
-  let best: AppraisalMatch | null = null;
-  for (const item of APPRAISAL_DATASET) {
-    if (item.category !== id.category) continue; // categoría es el filtro fuerte
-    let score = 1; // misma categoría
-    if (id.franchise && overlaps(id.franchise, item.franchise)) score += 2;
-    if (id.character && overlaps(id.character, item.character)) score += 3;
-    // también intentamos personaje IA contra franquicia y viceversa (etiquetas cruzadas)
-    if (id.character && overlaps(id.character, item.franchise)) score += 1;
-    if (id.franchise && overlaps(id.franchise, item.character)) score += 1;
-
-    if (!best || score > best.score) best = { item, score };
-  }
-
-  // Necesitamos algo más que "misma categoría" para considerarlo un match real.
-  if (!best || best.score < 3) return null;
-  return best;
 }
