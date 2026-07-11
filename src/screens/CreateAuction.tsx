@@ -41,6 +41,8 @@ export default function CreateAuction({ onBack }: CreateAuctionProps) {
   const { user } = useAuth();
   const toast = useToast();
   const preselected = location.state?.listingId;
+  // Precio sugerido que llega desde la tasación (media del rango JustTCG).
+  const preStart = location.state?.startingPrice;
 
   // The seller's own AUCTION listings that don't already have an active auction.
   const listingsQ = useFetch(
@@ -53,7 +55,11 @@ export default function CreateAuction({ onBack }: CreateAuctionProps) {
   );
 
   const form = useForm({
-    initial: { listingId: preselected ? String(preselected) : '', startingPrice: '', endDate: '', endTime: '' },
+    initial: {
+      listingId: preselected ? String(preselected) : '',
+      startingPrice: preStart != null ? String(preStart) : '',
+      endDate: '', endTime: '',
+    },
     validate,
   });
   const [duration, setDuration] = React.useState(3);
