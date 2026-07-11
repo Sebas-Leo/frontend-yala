@@ -7,6 +7,7 @@ import React from 'react';
 
 const Home = React.lazy(() => import('./screens/Home'));
 const Lives = React.lazy(() => import('./screens/Lives'));
+const Appraisal = React.lazy(() => import('./screens/Appraisal'));
 const Landing = React.lazy(() => import('./screens/Landing'));
 const AuctionLive = React.lazy(() => import('./screens/AuctionLive'));
 const LiveView = React.lazy(() => import('./screens/LiveView'));
@@ -68,6 +69,7 @@ export function buildRoutes(ctx: any): RouteDef[] {
         />
       ),
     },
+    { path: '/tasacion', element: <Appraisal /> },
     { path: '/lives', element: <Lives onOpenLive={(id) => navigate('/live/' + id)} /> },
     {
       path: '/live/:id',
