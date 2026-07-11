@@ -5,7 +5,7 @@ import { Track } from 'livekit-client';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button, Input, Price, Icon } from '../ds';
 import { useToast } from '../context/ToastContext';
-import { startLive, endLive, createFlashAuction, closeFlashAuction, listComments, postComment, summarizeComments, detectProduct } from '../api/live';
+import { startLive, endLive, createFlashAuction, closeFlashAuction, listComments, postComment, summarizeComments, detectProduct, transcribeChunk } from '../api/live';
 import { subscribeLive, subscribeLiveChat } from '../api/realtime';
 import type { FlashAuction, LiveComment, LiveToken, LiveUpdateMessage } from '../types';
 
@@ -46,6 +46,36 @@ const css = `
 let ic = false;
 function ensure() { if (!ic) { ic = true; const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s); } }
 
+// ── Audio helpers for the mic → transcription pipeline (ADR-002 Fase 3) ──────────
+// Crude decimation to 16 kHz (enough for speech STT); avoids pulling in a resampler.
+function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
+  if (inputRate <= 16000) return input;
+  const ratio = inputRate / 16000;
+  const outLen = Math.floor(input.length / ratio);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) out[i] = input[Math.floor(i * ratio)];
+  return out;
+}
+
+// Encode mono Float32 samples as a 16-bit PCM WAV blob at 16 kHz.
+function encodeWav16k(samples: Float32Array): Blob {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const rate = 16000;
+  const writeStr = (off: number, s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+  writeStr(0, 'RIFF'); view.setUint32(4, 36 + samples.length * 2, true); writeStr(8, 'WAVE');
+  writeStr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  writeStr(36, 'data'); view.setUint32(40, samples.length * 2, true);
+  let off = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    off += 2;
+  }
+  return new Blob([view], { type: 'audio/wav' });
+}
+
 const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL;
 
 // The seller's camera preview. Shows a QR (linking to the public live URL) so
@@ -85,25 +115,50 @@ export default function GoLive({ onBack }: Props) {
   const [summary, setSummary] = React.useState<string | null>(null);
   const [summarizing, setSummarizing] = React.useState(false);
 
-  // Voice → product (ADR-002): the seller says the trigger phrase + describes the collectible;
-  // Web Speech API transcribes it, the backend extracts attributes, and we pre-fill / auto-create
-  // the flash auction depending on the mode toggle.
-  const TRIGGER = 'iniciemos esta nueva subasta';
-  const SpeechRecognition: any = typeof window !== 'undefined'
-    ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    : null;
+  // Voice → product (ADR-002, Fase 3): STT cross-browser con gpt-4o-mini-transcribe. Capturamos el
+  // mic continuo (WebAudio), mandamos ventanas ~3s solapadas al backend, y sobre un buffer de texto
+  // acumulado detectamos la frase clave con match tolerante (ignora espacios/tildes → aunque el corte
+  // parta la frase se detecta). onDetected extrae atributos y llena/crea la subasta según el modo.
+  const TRIGGER_COMPACT = 'iniciemosestanuevasubasta';
   const [voiceOn, setVoiceOn] = React.useState(false);
   const [autoMode, setAutoMode] = React.useState(false); // false = con confirmación, true = automático
   const [heard, setHeard] = React.useState('');
   const [detecting, setDetecting] = React.useState(false);
-  // Refs so the long-lived recognition callback reads fresh values.
+  // Refs so the long-lived audio callbacks read fresh values.
   const autoModeRef = React.useRef(autoMode); autoModeRef.current = autoMode;
   const tokenRef = React.useRef(token); tokenRef.current = token;
+  const bufferRef = React.useRef('');
   const capturingRef = React.useRef(false);
   const partsRef = React.useRef<string[]>([]);
   const captureTimer = React.useRef<any>(null);
 
-  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  // Alphanumeric-only normalization: strips accents, spaces and punctuation so the trigger phrase
+  // matches even if a chunk boundary split a word ("nueva sub" + "asta" → "nuevasubasta").
+  const compact = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+
+  // Fed by each transcribed chunk: append to a rolling buffer, detect the trigger, then capture the
+  // following ~7s of speech as the product description.
+  const onTranscript = (text: string) => {
+    if (!text || !text.trim()) return;
+    setHeard(text.trim().slice(-80));
+    if (capturingRef.current) {
+      partsRef.current.push(text.trim());
+      return;
+    }
+    bufferRef.current = (bufferRef.current + ' ' + text.trim()).slice(-1200);
+    if (compact(bufferRef.current).includes(TRIGGER_COMPACT)) {
+      capturingRef.current = true;
+      partsRef.current = [text.trim()];
+      bufferRef.current = '';
+      clearTimeout(captureTimer.current);
+      captureTimer.current = setTimeout(() => {
+        capturingRef.current = false;
+        const desc = partsRef.current.join(' ').trim();
+        partsRef.current = [];
+        if (desc) onDetected(desc);
+      }, 7000);
+    }
+  };
 
   const onDetected = async (description: string) => {
     const tk = tokenRef.current;
@@ -131,50 +186,65 @@ export default function GoLive({ onBack }: Props) {
     }
   };
 
-  // Web Speech API lifecycle: runs while voiceOn && live.
+  // Continuous mic capture → overlapping ~3s WAV windows → backend transcription (cross-browser).
   React.useEffect(() => {
-    if (!voiceOn || !token || !SpeechRecognition) return undefined;
-    const rec = new SpeechRecognition();
-    rec.lang = 'es-PE';
-    rec.continuous = true;
-    rec.interimResults = true;
+    if (!voiceOn || !token) return undefined;
     let stopped = false;
+    let ac: AudioContext | null = null;
+    let stream: MediaStream | null = null;
+    let processor: any = null;
+    let source: any = null;
+    let chunkTimer: any = null;
+    let pcm: number[] = [];        // recent mono samples at the AudioContext rate
+    let sampleRate = 48000;
 
-    rec.onresult = (e: any) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const res = e.results[i];
-        const text = res[0].transcript;
-        setHeard(text.trim().slice(-80));
-        if (!res.isFinal) continue;
-        if (!capturingRef.current) {
-          if (norm(text).includes(TRIGGER)) {
-            // Trigger heard — capture this utterance + the next few seconds of speech.
-            capturingRef.current = true;
-            partsRef.current = [text.trim()];
-            clearTimeout(captureTimer.current);
-            captureTimer.current = setTimeout(() => {
-              capturingRef.current = false;
-              const desc = partsRef.current.join(' ').trim();
-              partsRef.current = [];
-              if (desc) onDetected(desc);
-            }, 7000);
-          }
-        } else {
-          partsRef.current.push(text.trim());
-        }
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } as any,
+        });
+        if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
+        ac = new (window.AudioContext || (window as any).webkitAudioContext)();
+        sampleRate = ac.sampleRate;
+        source = ac.createMediaStreamSource(stream);
+        processor = (ac as any).createScriptProcessor(4096, 1, 1);
+        processor.onaudioprocess = (e: any) => {
+          const data = e.inputBuffer.getChannelData(0);
+          for (let i = 0; i < data.length; i++) pcm.push(data[i]);
+          const maxKeep = sampleRate * 5; // keep the last ~5s
+          if (pcm.length > maxKeep) pcm = pcm.slice(pcm.length - maxKeep);
+        };
+        source.connect(processor);
+        processor.connect(ac.destination);
+
+        // Every ~2s send the last ~3s of audio (=> ~1s overlap) so no word is lost at boundaries.
+        chunkTimer = setInterval(() => {
+          const tk = tokenRef.current;
+          if (!tk || pcm.length < sampleRate) return; // wait for ~1s of audio
+          const windowLen = Math.floor(sampleRate * 3);
+          const slice = pcm.slice(Math.max(0, pcm.length - windowLen));
+          const blob = encodeWav16k(downsampleTo16k(Float32Array.from(slice), sampleRate));
+          transcribeChunk(tk.streamId, blob)
+            .then((r: any) => onTranscript(r?.text || ''))
+            .catch(() => { /* ignore transient errors */ });
+        }, 2000);
+      } catch {
+        toast.error('No se pudo acceder al micrófono', 'Revisa los permisos del navegador.');
+        setVoiceOn(false);
       }
-    };
-    // Chrome stops recognition periodically; restart while active.
-    rec.onend = () => { if (!stopped) { try { rec.start(); } catch { /* already starting */ } } };
-    rec.onerror = () => { /* ignore transient errors; onend restarts */ };
-    try { rec.start(); } catch { /* ignore */ }
+    })();
 
     return () => {
       stopped = true;
+      clearInterval(chunkTimer);
       clearTimeout(captureTimer.current);
       capturingRef.current = false;
       partsRef.current = [];
-      try { rec.stop(); } catch { /* ignore */ }
+      bufferRef.current = '';
+      try { processor && processor.disconnect(); } catch { /* ignore */ }
+      try { source && source.disconnect(); } catch { /* ignore */ }
+      try { ac && ac.close(); } catch { /* ignore */ }
+      try { stream && stream.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceOn, token]);
@@ -314,27 +384,19 @@ export default function GoLive({ onBack }: Props) {
                 <span className="ygl__label">Detección por voz</span>
                 <span className="ygl__beta">beta</span>
               </div>
-              {!SpeechRecognition ? (
-                <div className="ygl__voicewarn">
-                  Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.
-                </div>
-              ) : (
-                <>
-                  <div className="ygl__voicerow">
-                    <Button size="sm" variant={voiceOn ? 'live' : 'secondary'} onClick={() => setVoiceOn((v) => !v)}>
-                      {voiceOn ? (detecting ? 'Analizando…' : 'Escuchando…') : 'Activar detección por voz'}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setAutoMode((m) => !m)}>
-                      Modo: {autoMode ? 'Automático' : 'Confirmación'}
-                    </Button>
-                  </div>
-                  <div className="ygl__voicehint">
-                    Di <b>«Iniciemos esta nueva subasta»</b> y describe el coleccionable.
-                    {autoMode ? ' La subasta se creará sola.' : ' Rellenamos el formulario para que lo revises.'}
-                  </div>
-                  {voiceOn && heard && <div className="ygl__voiceheard">…{heard}</div>}
-                </>
-              )}
+              <div className="ygl__voicerow">
+                <Button size="sm" variant={voiceOn ? 'live' : 'secondary'} onClick={() => setVoiceOn((v) => !v)}>
+                  {voiceOn ? (detecting ? 'Analizando…' : 'Escuchando…') : 'Activar detección por voz'}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setAutoMode((m) => !m)}>
+                  Modo: {autoMode ? 'Automático' : 'Confirmación'}
+                </Button>
+              </div>
+              <div className="ygl__voicehint">
+                Di <b>«Iniciemos esta nueva subasta»</b> y describe el coleccionable.
+                {autoMode ? ' La subasta se creará sola.' : ' Rellenamos el formulario para que lo revises.'}
+              </div>
+              {voiceOn && heard && <div className="ygl__voiceheard">…{heard}</div>}
             </div>
             <div className="ygl__card">
               <div className="ygl__label">Subasta flash</div>
