@@ -12,6 +12,9 @@ import { subscribeLive, subscribeLiveChat } from '../api/realtime';
 import { useFetch } from '../hooks/useFetch';
 import type { FlashAuction, LiveComment, LiveDetail, LiveToken, LiveUpdateMessage } from '../types';
 
+// Monto máximo permitido en una subasta en vivo; al alcanzarlo el backend cierra la subasta.
+const MAX_LIVE_BID = 9999;
+
 const css = `
 /* ── Desktop layout (video grande + sidebar) ─────────────────────────────── */
 .ylv{width:100%;max-width:1600px;margin:0 auto;padding:12px 24px;display:flex;gap:16px;align-items:stretch;height:calc(100vh - 124px);}
@@ -40,6 +43,7 @@ const css = `
 .ylv__chathd{padding:12px 14px;border-bottom:1px solid var(--border-subtle);font-weight:700;font-size:14px;color:var(--text-strong);}
 .ylv__msgs{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px;}
 .ylv__msg{font-size:13px;line-height:1.4;color:var(--text-body);}
+.ylv__msg--sys{background:var(--brand-subtle);color:var(--brand);font-weight:600;border-radius:8px;padding:6px 10px;}
 .ylv__msg b{color:var(--text-strong);font-weight:700;margin-right:5px;}
 .ylv__chatform{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border-subtle);}
 .ylv__statetag{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:3px 9px;border-radius:var(--radius-pill);}
@@ -64,6 +68,7 @@ const css = `
 .ylvi__bottom{position:absolute;bottom:0;left:0;right:0;display:flex;flex-direction:column;gap:8px;padding:8px 12px;padding-bottom:max(16px,calc(env(safe-area-inset-bottom,0px) + 16px));}
 .ylvi__chatoverlay{display:flex;flex-direction:column;gap:4px;max-width:68%;pointer-events:none;}
 .ylvi__chatpill{display:inline-flex;flex-wrap:wrap;align-items:center;align-self:flex-start;background:rgba(15,15,22,0.55);border-radius:12px;padding:5px 10px;font-size:13px;color:#fff;font-family:var(--font-sans);line-height:1.4;gap:2px;}
+.ylvi__chatpill--sys{background:rgba(14,40,214,0.85);font-weight:600;}
 .ylvi__chatpill b{font-weight:700;margin-right:2px;}
 .ylvi__acard{background:var(--surface-card,#fff);border-radius:var(--radius-xl,18px);padding:14px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow-live,0 4px 32px rgba(251,101,20,0.22));}
 .ylvi__acardtop{display:flex;align-items:center;justify-content:space-between;gap:8px;}
@@ -174,9 +179,13 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
+  // La primera puja válida es basePrice + incremento (el precio base solo no es una puja válida);
+  // las siguientes, la puja actual + incremento.
   const minNext = auction
-    ? (auction.currentPrice == null ? auction.basePrice : auction.currentPrice + auction.bidIncrement)
+    ? (auction.currentPrice == null ? auction.basePrice : auction.currentPrice) + auction.bidIncrement
     : 0;
+  // Al alcanzar este tope la subasta se cierra sola (el backend la finaliza); no se puede pujar por encima.
+  const maxedOut = !!auction && minNext > MAX_LIVE_BID;
 
   // URL pública de este live para compartirlo vía QR (escanear → entrar al live).
   const liveUrl = typeof window !== 'undefined' ? `${window.location.origin}/live/${id}` : '';
@@ -214,7 +223,11 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
     if (!verified) { onRequireDni && onRequireDni(); return; }
     const amount = parseFloat(bid);
     if (isNaN(amount) || amount < minNext) {
-      toast.error('Puja inválida', `Tu puja debe ser al menos S/. ${minNext}.`);
+      toast.error('Puja inválida', `El monto debe ser mayor. Monto mínimo permitido: S/. ${minNext}.`);
+      return;
+    }
+    if (amount > MAX_LIVE_BID) {
+      toast.error('Puja inválida', `El monto máximo permitido es S/. ${MAX_LIVE_BID}.`);
       return;
     }
     setSubmitting(true);
@@ -223,7 +236,7 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
       setBid('');
       toast.success('¡Puja registrada!', 'Vas liderando la subasta.', 'Gavel');
     } catch (err: any) {
-      if (err?.status === 409) toast.error('El precio cambió', 'Alguien pujó antes. Revisa el nuevo precio.');
+      if (err?.status === 409) toast.error('Alguien ya pujó ese monto', 'Intenta con uno mayor.');
       else toast.error('No se pudo pujar', err?.message || 'Intenta de nuevo.');
     } finally {
       setSubmitting(false);
@@ -235,13 +248,14 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
     if (!auction) return;
     if (!isAuthenticated) { toast.error('Inicia sesión', 'Necesitas una cuenta para pujar.'); return; }
     if (!verified) { onRequireDni && onRequireDni(); return; }
+    if (maxedOut) { toast.error('Subasta al máximo', `El monto máximo permitido es S/. ${MAX_LIVE_BID}.`); return; }
     setSubmitting(true);
     try {
       await placeLiveBid(auction.id, minNext);
       setCustomMode(false);
       toast.success('¡Puja registrada!', 'Vas liderando la subasta.', 'Gavel');
     } catch (err: any) {
-      if (err?.status === 409) toast.error('El precio cambió', 'Alguien pujó antes. Revisa el nuevo precio.');
+      if (err?.status === 409) toast.error('Alguien ya pujó ese monto', 'Intenta con uno mayor.');
       else toast.error('No se pudo pujar', err?.message || 'Intenta de nuevo.');
     } finally {
       setSubmitting(false);
@@ -304,9 +318,9 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
           {/* Últimos 5 mensajes del chat (no interactivo) */}
           {messages.length > 0 && (
             <div className="ylvi__chatoverlay">
-              {messages.slice(-5).map((m) => (
-                <div key={m.id} className="ylvi__chatpill">
-                  <b>{m.userName ?? 'Anónimo'}</b>{m.text}
+              {messages.slice(-5).map((m, i) => (
+                <div key={`${m.id}-${i}`} className={`ylvi__chatpill${m.userId === 0 ? ' ylvi__chatpill--sys' : ''}`}>
+                  {m.userId === 0 ? m.text : <><b>{m.userName ?? 'Anónimo'}</b>{m.text}</>}
                 </div>
               ))}
             </div>
@@ -338,7 +352,7 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
                       value={bid}
                       onChange={(e: any) => {
                         let v = e.target.value.replace(/[^\d.]/g, '');
-                        if (Number(v) > 9999) v = '9999';
+                        if (Number(v) > MAX_LIVE_BID) v = String(MAX_LIVE_BID);
                         setBid(v);
                       }}
                       style={{ flex: 1, minWidth: 0 }}
@@ -347,7 +361,7 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
                       variant="live"
                       size="md"
                       onClick={submitBid}
-                      disabled={submitting}
+                      disabled={submitting || maxedOut}
                       iconLeft={Icon.Gavel ? <Icon.Gavel size={16} /> : null}
                     >
                       {submitting ? '…' : 'Pujar'}
@@ -368,10 +382,10 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
                       size="md"
                       style={{ flex: 2 }}
                       onClick={quickBid}
-                      disabled={submitting}
+                      disabled={submitting || maxedOut}
                       iconLeft={Icon.Gavel ? <Icon.Gavel size={16} /> : null}
                     >
-                      {submitting ? '…' : `Pujar  S/. ${minNext}`}
+                      {maxedOut ? 'Monto máximo alcanzado' : submitting ? '…' : `Pujar  S/. ${minNext}`}
                     </Button>
                   </div>
                 )
@@ -498,10 +512,10 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
                 {auction.status === 'ACTIVE' && (
                   <div className="ylv__bidrow">
                     <Input prefix="S/." mono placeholder={String(minNext)} value={bid}
-                      onChange={(e: any) => { let v = e.target.value.replace(/[^\d.]/g, ''); if (Number(v) > 9999) v = '9999'; setBid(v); }}
+                      onChange={(e: any) => { let v = e.target.value.replace(/[^\d.]/g, ''); if (Number(v) > MAX_LIVE_BID) v = String(MAX_LIVE_BID); setBid(v); }}
                       style={{ flex: 1, minWidth: 0 }} />
-                    <Button onClick={submitBid} disabled={submitting}
-                      iconLeft={Icon.Gavel ? <Icon.Gavel size={16} /> : null}>Pujar S/. {minNext}</Button>
+                    <Button onClick={submitBid} disabled={submitting || maxedOut}
+                      iconLeft={Icon.Gavel ? <Icon.Gavel size={16} /> : null}>{maxedOut ? 'Máx. alcanzado' : `Pujar S/. ${minNext}`}</Button>
                   </div>
                 )}
                 {auction.status === 'SOLD' && auction.winnerName && (
@@ -526,8 +540,10 @@ export default function LiveView({ verified, onRequireDni, onBack }: Props) {
             <div className="ylv__msgs">
               {messages.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--text-subtle)' }}>Sé el primero en comentar.</div>
-              ) : messages.map((m) => (
-                <div className="ylv__msg" key={m.id}><b>{m.userName}</b>{m.text}</div>
+              ) : messages.map((m, i) => (
+                <div className={`ylv__msg${m.userId === 0 ? ' ylv__msg--sys' : ''}`} key={`${m.id}-${i}`}>
+                  {m.userId === 0 ? m.text : <><b>{m.userName}</b>{m.text}</>}
+                </div>
               ))}
             </div>
             <form className="ylv__chatform" onSubmit={sendComment}>

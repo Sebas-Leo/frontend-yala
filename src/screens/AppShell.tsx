@@ -66,7 +66,11 @@ export default function AppShell({ onNav, onLogout, user = null }: AppShellProps
   // Top nav tabs (Subastar / Lives), shown everywhere except landing/login/register.
   const loc = useLocation();
   const showTabs = !['/', '/login', '/register'].includes(loc.pathname);
-  const navTab = loc.pathname.startsWith('/live') ? 'lives' : 'subastar';
+  const navTab = loc.pathname.startsWith('/tasacion')
+    ? 'tasacion'
+    : loc.pathname.startsWith('/live')
+      ? 'lives'
+      : 'subastar';
   const auth = useAuth();
   const toast = useToast();
   const [searchParams] = useSearchParams();
@@ -106,6 +110,9 @@ export default function AppShell({ onNav, onLogout, user = null }: AppShellProps
 
   const tabs = (
     <>
+      <span className={`ysh__cat${navTab === 'tasacion' ? ' ysh__cat--active' : ''}`} onClick={() => navigate('/tasacion')}>
+        {Icon.TrendingUp ? <Icon.TrendingUp size={15} /> : null} ¿Cuánto vale?
+      </span>
       <span className={`ysh__cat${navTab === 'subastar' ? ' ysh__cat--active' : ''}`} onClick={() => navigate('/inicio')}>
         {Icon.Gavel ? <Icon.Gavel size={15} /> : null} Subastar
       </span>

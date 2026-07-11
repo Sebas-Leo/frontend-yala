@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Input, Textarea, Select, Tag, Button, Icon } from '../ds';
 import { listCategories } from '../api/categories';
 import { createListing } from '../api/listings';
@@ -46,8 +46,12 @@ interface CreateListingProps { onBack?: () => void; onCreate?: () => void; }
 export default function CreateListing({ onBack }: CreateListingProps) {
   ensure();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const fileRef = React.useRef(null);
+
+  // Prefill que llega desde la tasación (/tasacion → "Publicar subasta con este precio").
+  const prefill: any = (location.state as any)?.prefill;
 
   const catsQ = useFetch((signal) => listCategories({ signal }), []);
   const tagsQ = useFetch((signal) => listTags({ signal }), []);
@@ -55,11 +59,27 @@ export default function CreateListing({ onBack }: CreateListingProps) {
   const suggestedTags = (tagsQ.data || []).map((t) => t.name);
 
   const form = useForm({
-    initial: { title: '', description: '', mode: 'AUCTION', fixedPrice: '', categoryId: '', condition: '' },
+    initial: {
+      title: prefill?.title || '', description: '', mode: 'AUCTION',
+      fixedPrice: '', categoryId: '', condition: '',
+    },
     validate,
   });
   const [tags, setTags] = React.useState([]);
   const [images, setImages] = React.useState([]); // { file, url }
+
+  // Carga la foto de la tasación (data-URL) como imagen inicial de la publicación.
+  React.useEffect(() => {
+    if (!prefill?.imageDataUrl) return;
+    (async () => {
+      try {
+        const blob = await (await fetch(prefill.imageDataUrl)).blob();
+        const file = new File([blob], 'carta.jpg', { type: blob.type || 'image/jpeg' });
+        setImages([{ file, url: prefill.imageDataUrl } as any]);
+      } catch { /* el vendedor puede subirla manualmente */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleTag = (t) => setTags((x) => (x.includes(t) ? x.filter((y) => y !== t) : [...x, t]));
 
@@ -96,7 +116,9 @@ export default function CreateListing({ onBack }: CreateListingProps) {
 
         if (v.mode === 'AUCTION') {
           toast.success('Ítem creado', 'Ahora define el precio inicial y la duración de la subasta.');
-          navigate('/seller/new-auction', { state: { listingId: listing.id, title: listing.title } });
+          navigate('/seller/new-auction', {
+            state: { listingId: listing.id, title: listing.title, startingPrice: prefill?.suggestedPrice },
+          });
         } else {
           toast.success('Publicación creada', 'Ya está visible en el marketplace.', 'Check');
           navigate('/listing/' + listing.id);
